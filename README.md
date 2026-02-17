@@ -40,7 +40,7 @@ No PHP, no Composer, no Docker needed on the host machine.
 In an empty directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wednesdaysmoonlab/laravel-lake/main/lake.setup | bash
+curl -fsSL https://raw.githubusercontent.com/wednesdaysmoonlab/lake/main/lake.setup | bash
 ```
 
 ### Option B — Download first
