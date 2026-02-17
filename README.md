@@ -129,25 +129,25 @@ FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup
 
 ---
 
-## Flags
+## Commands
 
 ```bash
-./lake.setup --help        # Show usage
-./lake.setup --clean       # Remove everything except lake.setup and .claude
-./lake.setup --clean-app   # Remove Laravel files only, keep .lake/ (faster reinstall)
+./lake.setup help    # Show usage
+./lake.setup purge   # Remove everything except lake.setup and .claude
+./lake.setup clean   # Remove Laravel files only, keep .lake/ (faster reinstall)
 ```
 
-### `--clean` vs `--clean-app`
+### `purge` vs `clean`
 
-| Flag | Keeps | Removes |
-|------|-------|---------|
-| `--clean` | `lake.setup`, `.claude` | Everything including `.lake/` |
-| `--clean-app` | `lake.setup`, `.claude`, `.lake/` | All Laravel app files |
+| Command | Keeps | Removes |
+|---------|-------|---------|
+| `purge` | `lake.setup`, `.claude` | Everything including `.lake/` |
+| `clean` | `lake.setup`, `.claude`, `.lake/` | All Laravel app files |
 
-Use `--clean-app` when you want to start a fresh Laravel install without re-downloading FrankenPHP and Composer (~170 MB).
+Use `clean` when you want to start a fresh Laravel install without re-downloading FrankenPHP and Composer (~170 MB).
 
 ```bash
-./lake.setup --clean-app
+./lake.setup clean
 ./lake.setup
 ```
 
