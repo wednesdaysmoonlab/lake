@@ -331,6 +331,7 @@ foreach ($rii as $file) {
 if ($count > 0) {
     echo "  Lake: patched PHP_BINARY in $count vendor file(s) for FrankenPHP compatibility." . PHP_EOL;
 }
+
 FIXEOF
 chmod +x "$TOOLS_DIR/fix-php-binary"
 
@@ -527,6 +528,16 @@ fi
 if [[ -f ".gitignore" ]] && ! grep -qxF ".lake" .gitignore; then
   echo ".lake" >> .gitignore
   echo "Added .lake to .gitignore"
+fi
+
+# ----------------------------
+# POST-INSTALL ACTIONS
+# ----------------------------
+# Each script in post-actions/ handles a specific conditional post-install task.
+# Add new post-install scripts here following the same pattern.
+
+if [[ -f "$SCRIPT_DIR/post-actions/replace-mcp-command.php" ]]; then
+  "$TOOLS_DIR/php" "$SCRIPT_DIR/post-actions/replace-mcp-command.php"
 fi
 
 # ----------------------------
