@@ -1,7 +1,10 @@
 # Lake
 
-Laravel development and deployment using a single [FrankenPHP](https://frankenphp.dev) binary.
-No Docker. No local PHP installation required.
+**Your machine. Zero PHP. Full Laravel.**
+
+Lake is a zero-dependency Laravel bootstrap powered by [FrankenPHP](https://frankenphp.dev) — a single binary that is the web server, the PHP runtime, and the CLI all at once. No Docker images to pull, no Homebrew formulas to install, no `phpenv` headaches.
+
+Drop `lake.setup` in a folder, run it, answer a few questions about your stack, and walk away with a production-ready Laravel app.
 
 ---
 
