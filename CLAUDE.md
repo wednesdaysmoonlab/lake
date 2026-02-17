@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Lake is a single-file bash bootstrap script (`lake.setup`) that provisions a full Laravel + FrankenPHP development environment with zero host-level dependencies (no PHP, no Docker, no Composer required).
+Lake is a single-file bash bootstrap script (`lakeup`) that provisions a full Laravel + FrankenPHP development environment with zero host-level dependencies (no PHP, no Docker, no Composer required).
 
 ## Commands
 
-After running `./lake.setup` once, the project is set up. Daily commands all go through the `.lake/` shims:
+After running `./lakeup` once, the project is set up. Daily commands all go through the `.lake/` shims:
 
 ```bash
 # Bootstrap (run once in an empty directory)
-./lake.setup
-FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup   # with overrides
+./lakeup
+FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lakeup   # with overrides
 
 # Start dev server (FrankenPHP + queue worker + log viewer + Vite)
 .lake/composer run dev
@@ -29,13 +29,13 @@ FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup   # with overrides
 .lake/composer run test
 
 # Reset
-./lake.setup purge    # Remove everything except lake.setup and .claude
-./lake.setup clean    # Remove Laravel files only; keep .lake/ (~170 MB of binaries)
+./lakeup purge    # Remove everything except lakeup and .claude
+./lakeup clean    # Remove Laravel files only; keep .lake/ (~170 MB of binaries)
 ```
 
 ## Architecture
 
-The entire bootstrap logic lives in `lake.setup`. There is no build step — it is a standalone bash script.
+The entire bootstrap logic lives in `lakeup`. There is no build step — it is a standalone bash script.
 
 **Key design decisions:**
 
@@ -50,7 +50,7 @@ The entire bootstrap logic lives in `lake.setup`. There is no build step — it 
 
 ## Output style
 
-All user-facing messages in `lake.setup` use the `_say` helper instead of plain `echo`:
+All user-facing messages in `lakeup` use the `_say` helper instead of plain `echo`:
 
 ```bash
 _say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
@@ -63,7 +63,7 @@ _say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
 
 ## Post-install patching
 
-Conditional patches that run after `laravel new` are written **inline in `lake.setup`** as bash + `frankenphp php-cli -r "..."` blocks. Do not introduce external PHP scripts or downloads for these — they must work in a single-file bootstrap (including `curl | bash` installs).
+Conditional patches that run after `laravel new` are written **inline in `lakeup`** as bash + `frankenphp php-cli -r "..."` blocks. Do not introduce external PHP scripts or downloads for these — they must work in a single-file bootstrap (including `curl | bash` installs).
 
 Current inline patches:
 - **`.mcp.json` command path** — if `.mcp.json` contains `"command": "php"` (written by packages like `laravel/boost`), the user is prompted to rewrite it to `.lake/php`. Uses `read -rp ... </dev/tty` for reliable interactive input and `frankenphp php-cli -r` for the regex replacement.

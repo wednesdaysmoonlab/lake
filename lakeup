@@ -44,7 +44,7 @@ _ask() {  # _ask "Question [default]:" "default_value"
 }
 
 # ======================================
-#  lake.setup
+#  lakeup
 #  Laravel + FrankenPHP bootstrap
 #  No Docker. No local PHP required.
 # ======================================
@@ -57,13 +57,13 @@ LAKE_SETUP_VERSION="0.1.0"
 
 if [[ "${1:-}" == "help" || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<HELPEOF
-lake.setup v${LAKE_SETUP_VERSION}
+lakeup v${LAKE_SETUP_VERSION}
 
 Usage:
-  ./lake.setup [COMMAND]
+  ./lakeup [COMMAND]
 
 Commands:
-  purge         Remove everything in this directory except lake.setup, .claude, .git, .gitignore, CLAUDE.md, and README.md
+  purge         Remove everything in this directory except lakeup, .claude, .git, .gitignore, CLAUDE.md, and README.md
   clean         Remove Laravel app files only; keep .lake/ (FrankenPHP, Composer, installer)
   help          Show this help message
 
@@ -72,7 +72,7 @@ Environment overrides:
   LAKE_PORT=9000            Skip the port prompt and use this port
 
 Example:
-  FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup
+  FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lakeup
 HELPEOF
   exit 0
 fi
@@ -124,7 +124,7 @@ if [[ "${1:-}" == "clean" ]]; then
     ! -name "README.md" \
     ! -name ".lake" \
     -exec rm -rf {} +
-  _say "Done. Run ./lake.setup to reinstall Laravel."
+  _say "Done. Run ./lakeup to reinstall Laravel."
   exit 0
 fi
 

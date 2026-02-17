@@ -4,13 +4,13 @@
 
 Lake is a zero-dependency Laravel bootstrap powered by [FrankenPHP](https://frankenphp.dev) — a single binary that is the web server, the PHP runtime, and the CLI all at once. No Docker images to pull, no Homebrew formulas to install, no `phpenv` headaches.
 
-Drop `lake.setup` in a folder, run it, answer a few questions about your stack, and walk away with a production-ready Laravel app.
+Drop `lakeup` in a folder, run it, answer a few questions about your stack, and walk away with a production-ready Laravel app.
 
 ---
 
 ## Overview
 
-`lake.setup` bootstraps a full Laravel project in the current directory by:
+`lakeup` bootstraps a full Laravel project in the current directory by:
 
 1. Downloading the FrankenPHP binary for your OS and architecture
 2. Installing Composer (as a PHAR, no global install needed)
@@ -40,16 +40,16 @@ No PHP, no Composer, no Docker needed on the host machine.
 In an empty directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wednesdaysmoonlab/lake/main/lake.setup | bash
+curl -fsSL https://raw.githubusercontent.com/wednesdaysmoonlab/lake/main/lakeup | bash
 ```
 
 ### Option B — Download first
 
-Place `lake.setup` in an empty directory and make it executable:
+Place `lakeup` in an empty directory and make it executable:
 
 ```bash
-chmod +x lake.setup
-./lake.setup
+chmod +x lakeup
+./lakeup
 ```
 
 You will be prompted for:
@@ -119,7 +119,7 @@ You can skip prompts by passing environment variables:
 
 ```bash
 # Pin a specific FrankenPHP version and set port without being asked
-FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup
+FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lakeup
 ```
 
 | Variable | Default | Description |
@@ -132,23 +132,23 @@ FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup
 ## Commands
 
 ```bash
-./lake.setup help    # Show usage
-./lake.setup purge   # Remove everything except lake.setup and .claude
-./lake.setup clean   # Remove Laravel files only, keep .lake/ (faster reinstall)
+./lakeup help    # Show usage
+./lakeup purge   # Remove everything except lakeup and .claude
+./lakeup clean   # Remove Laravel files only, keep .lake/ (faster reinstall)
 ```
 
 ### `purge` vs `clean`
 
 | Command | Keeps | Removes |
 |---------|-------|---------|
-| `purge` | `lake.setup`, `.claude` | Everything including `.lake/` |
-| `clean` | `lake.setup`, `.claude`, `.lake/` | All Laravel app files |
+| `purge` | `lakeup`, `.claude` | Everything including `.lake/` |
+| `clean` | `lakeup`, `.claude`, `.lake/` | All Laravel app files |
 
 Use `clean` when you want to start a fresh Laravel install without re-downloading FrankenPHP and Composer (~170 MB).
 
 ```bash
-./lake.setup clean
-./lake.setup
+./lakeup clean
+./lakeup
 ```
 
 ---
@@ -157,7 +157,7 @@ Use `clean` when you want to start a fresh Laravel install without re-downloadin
 
 ```
 your-project/
-├── lake.setup          # Bootstrap script (this file)
+├── lakeup          # Bootstrap script (this file)
 ├── .lake/              # Binaries — excluded from git
 │   ├── frankenphp      # FrankenPHP binary (~167 MB)
 │   ├── composer.phar   # Composer PHAR
@@ -177,7 +177,7 @@ your-project/
 
 ### FrankenPHP as the web server
 
-FrankenPHP embeds PHP and the Caddy web server into a single binary. `lake.setup` creates a `Caddyfile` that routes all requests through `index.php`:
+FrankenPHP embeds PHP and the Caddy web server into a single binary. `lakeup` creates a `Caddyfile` that routes all requests through `index.php`:
 
 ```caddy
 {
@@ -197,7 +197,7 @@ Because Composer passes `-d` flags when calling PHP (e.g. `-d allow_url_fopen=1`
 
 ### Dev script patch
 
-Laravel's default `composer run dev` uses `php artisan serve` (PHP's built-in `-S` web server). `lake.setup` automatically patches `composer.json` to replace it with `.lake/frankenphp run`, which uses the Caddyfile instead.
+Laravel's default `composer run dev` uses `php artisan serve` (PHP's built-in `-S` web server). `lakeup` automatically patches `composer.json` to replace it with `.lake/frankenphp run`, which uses the Caddyfile instead.
 
 ---
 
