@@ -48,7 +48,7 @@ Usage:
   ./lake.setup [OPTIONS]
 
 Options:
-  --clean       Remove everything in this directory except lake.setup, .claude, and .git
+  --clean       Remove everything in this directory except lake.setup, .claude, .git, .gitignore, CLAUDE.md, and README.md
   --clean-app   Remove Laravel app files only; keep .lake/ (FrankenPHP, Composer, installer)
   --help, -h    Show this help message
 
@@ -74,6 +74,9 @@ if [[ "${1:-}" == "--clean" ]]; then
     ! -name "$SCRIPT_NAME" \
     ! -name ".claude" \
     ! -name ".git" \
+    ! -name ".gitignore" \
+    ! -name "CLAUDE.md" \
+    ! -name "README.md" \
     -exec rm -rf {} +
   echo "Done."
   exit 0
@@ -91,6 +94,9 @@ if [[ "${1:-}" == "--clean-app" ]]; then
     ! -name "$SCRIPT_NAME" \
     ! -name ".claude" \
     ! -name ".git" \
+    ! -name ".gitignore" \
+    ! -name "CLAUDE.md" \
+    ! -name "README.md" \
     ! -name ".lake" \
     -exec rm -rf {} +
   echo "Done. Run ./lake.setup to reinstall Laravel."
