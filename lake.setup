@@ -1,0 +1,360 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ======================================
+#  lake.setup
+#  Laravel + FrankenPHP bootstrap
+#  No Docker. No local PHP required.
+# ======================================
+
+LAKE_SETUP_VERSION="0.1.0"
+
+# ----------------------------
+# --help FLAG
+# ----------------------------
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<HELPEOF
+lake.setup v${LAKE_SETUP_VERSION}
+
+Usage:
+  ./lake.setup [OPTIONS]
+
+Options:
+  --clean       Remove everything in this directory except lake.setup and .claude
+  --clean-app   Remove Laravel app files only; keep .lake/ (FrankenPHP, Composer, installer)
+  --help, -h    Show this help message
+
+Environment overrides:
+  FRANKEN_VERSION=1.11.2   Pin a specific FrankenPHP version (default: latest)
+  LAKE_PORT=9000            Skip the port prompt and use this port
+
+Example:
+  FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lake.setup
+HELPEOF
+  exit 0
+fi
+
+# ----------------------------
+# --clean FLAG
+# ----------------------------
+
+if [[ "${1:-}" == "--clean" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+  echo "Cleaning $SCRIPT_DIR (keeping $SCRIPT_NAME)..."
+  find "$SCRIPT_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name "$SCRIPT_NAME" \
+    ! -name ".claude" \
+    -exec rm -rf {} +
+  echo "Done."
+  exit 0
+fi
+
+# ----------------------------
+# --clean-app FLAG
+# ----------------------------
+
+if [[ "${1:-}" == "--clean-app" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+  echo "Cleaning Laravel app files (keeping .lake/, $SCRIPT_NAME)..."
+  find "$SCRIPT_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name "$SCRIPT_NAME" \
+    ! -name ".claude" \
+    ! -name ".lake" \
+    -exec rm -rf {} +
+  echo "Done. Run ./lake.setup to reinstall Laravel."
+  exit 0
+fi
+
+# ----------------------------
+# CONFIG
+# ----------------------------
+
+FRANKEN_VERSION="${FRANKEN_VERSION:-latest}"   # override: FRANKEN_VERSION=1.11.2 ./lake.setup
+
+# If LAKE_PORT is not set via env, prompt the user (default: 8090)
+if [[ -z "${LAKE_PORT:-}" ]]; then
+  read -rp "Dev server port [8090]: " _input_port
+  LAKE_PORT="${_input_port:-8090}"
+fi
+COMPOSER_URL="https://getcomposer.org/composer.phar"
+
+# All tools live in .lake/ so Composer won't count them as "existing files"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLS_DIR="$SCRIPT_DIR/.lake"
+FRANKEN_BIN="$TOOLS_DIR/frankenphp"
+COMPOSER_BIN="$TOOLS_DIR/composer.phar"
+
+mkdir -p "$TOOLS_DIR"
+
+# ----------------------------
+# DETECT OS + ARCH
+# ----------------------------
+
+_OS="$(uname -s)"
+_ARCH="$(uname -m)"
+
+case "$_OS" in
+  Linux*)  FRANKEN_OS="linux" ;;
+  Darwin*) FRANKEN_OS="mac"   ;;
+  *)       echo "Unsupported OS: $_OS"; exit 1 ;;
+esac
+
+# Linux filenames use "x86_64"/"aarch64"; Mac uses "x86_64"/"arm64" — pass uname -m through directly
+FRANKEN_ARCH="$_ARCH"
+FRANKEN_FILENAME="frankenphp-${FRANKEN_OS}-${FRANKEN_ARCH}"
+
+echo "OS: $FRANKEN_OS  ARCH: $FRANKEN_ARCH  Binary: $FRANKEN_FILENAME"
+
+# ----------------------------
+# BUILD DOWNLOAD URL
+# ----------------------------
+
+# Binaries are plain executables (no tar.gz).
+# Latest:  https://github.com/php/frankenphp/releases/latest/download/<file>
+# Pinned:  https://github.com/php/frankenphp/releases/download/v<ver>/<file>
+
+if [[ "$FRANKEN_VERSION" == "latest" ]]; then
+  FRANKEN_URL="https://github.com/php/frankenphp/releases/latest/download/${FRANKEN_FILENAME}"
+else
+  FRANKEN_URL="https://github.com/php/frankenphp/releases/download/v${FRANKEN_VERSION}/${FRANKEN_FILENAME}"
+fi
+
+# ----------------------------
+# DOWNLOAD FrankenPHP
+# ----------------------------
+
+if [[ -f "$FRANKEN_BIN" ]]; then
+  echo "FrankenPHP already in .lake/, skipping download."
+else
+  echo "Downloading FrankenPHP from: $FRANKEN_URL"
+  curl -L --progress-bar "$FRANKEN_URL" -o "$FRANKEN_BIN"
+  chmod +x "$FRANKEN_BIN"
+  echo "FrankenPHP ready."
+fi
+
+# .lake/php — strips Composer's -d flags then delegates to frankenphp php-cli
+if [[ ! -f "$TOOLS_DIR/php" ]]; then
+  cat > "$TOOLS_DIR/php" <<'SHIMEOF'
+#!/usr/bin/env bash
+# Composer passes "-d allow_url_fopen=1 -d disable_functions=" before the script.
+# FrankenPHP php-cli doesn't handle -d flags — strip them.
+args=()
+skip=0
+for arg in "$@"; do
+  if [[ $skip -eq 1 ]]; then skip=0; continue; fi
+  if [[ "$arg" == "-d" ]]; then skip=1; continue; fi
+  args+=("$arg")
+done
+exec "$(dirname "$0")/frankenphp" php-cli "${args[@]}"
+SHIMEOF
+  chmod +x "$TOOLS_DIR/php"
+fi
+
+# .lake/composer — runs composer.phar with PHP_BINARY set so @php hooks work
+if [[ ! -f "$TOOLS_DIR/composer" ]]; then
+  cat > "$TOOLS_DIR/composer" <<'SHIMEOF'
+#!/usr/bin/env bash
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PHP_BINARY="$DIR/php"
+export PATH="$DIR:$PATH"
+exec "$DIR/frankenphp" php-cli "$DIR/composer.phar" "$@"
+SHIMEOF
+  chmod +x "$TOOLS_DIR/composer"
+fi
+
+# Prepend .lake to PATH so every @php call in Composer hooks uses the shim.
+# Also set PHP_BINARY so Composer doesn't fall back to adding composer.phar to
+# its @php argument list (which would re-invoke Composer instead of artisan).
+export PATH="$TOOLS_DIR:$PATH"
+export PHP_BINARY="$TOOLS_DIR/php"
+
+# ----------------------------
+# DOWNLOAD Composer PHAR
+# ----------------------------
+
+if [[ -f "$COMPOSER_BIN" ]]; then
+  echo "composer.phar already in .lake/, skipping download."
+else
+  echo "Downloading composer.phar..."
+  curl -L --progress-bar "$COMPOSER_URL" -o "$COMPOSER_BIN"
+  chmod +x "$COMPOSER_BIN"
+  echo "Composer ready."
+fi
+
+cd "$SCRIPT_DIR"
+
+# ----------------------------
+# INSTALL Laravel Installer
+# ----------------------------
+
+# laravel/installer provides `laravel new` which offers interactive stack
+# selection (Livewire, Inertia, Breeze, etc.) — not available via create-project.
+# Install it as a global Composer package isolated inside .lake/.
+
+LARAVEL_BIN="$TOOLS_DIR/vendor/bin/laravel"
+
+if [[ -f "$LARAVEL_BIN" ]]; then
+  echo "laravel/installer already in .lake/, skipping."
+else
+  echo "Installing laravel/installer..."
+  COMPOSER_HOME="$TOOLS_DIR" "$FRANKEN_BIN" php-cli "$COMPOSER_BIN" global require laravel/installer --no-interaction
+  echo "Laravel installer ready."
+fi
+
+# ----------------------------
+# INSTALL Laravel INTO CURRENT DIRECTORY
+# ----------------------------
+
+# Strategy: `laravel new` into a temp subdir, then move everything here.
+# `laravel new` prompts for starter kit, stack (Livewire/Inertia/etc.), testing
+# framework, and more — then handles composer install + initial setup itself.
+
+if [[ -f "$SCRIPT_DIR/artisan" ]]; then
+  echo "Laravel already installed (artisan found), skipping."
+else
+  TMP_DIRNAME=".laravel_setup_tmp"
+  TMP_DIR="$SCRIPT_DIR/$TMP_DIRNAME"
+
+  # Clean up any leftover temp dir from a previous failed run
+  [[ -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+
+  echo "Creating Laravel project..."
+  # Use a temp subdir so the installer gets a clean empty directory.
+  # cd "$SCRIPT_DIR" has already run above, so the relative name resolves correctly.
+  COMPOSER_HOME="$TOOLS_DIR" "$FRANKEN_BIN" php-cli "$LARAVEL_BIN" new "$TMP_DIRNAME"
+
+  if [[ ! -d "$TMP_DIR" ]]; then
+    echo "ERROR: laravel new did not produce $TMP_DIR — check installer output above."
+    exit 1
+  fi
+
+  # Move everything (including hidden files) into the project root
+  cp -a "$TMP_DIR/." "$SCRIPT_DIR/"
+  rm -rf "$TMP_DIR"
+
+  echo "Laravel files installed."
+fi
+
+# ----------------------------
+# PATCH COMPOSER DEV SCRIPT
+# ----------------------------
+
+# Laravel's default dev script runs `php artisan serve` which uses PHP's
+# built-in -S server. FrankenPHP doesn't support -S — it IS the web server.
+# Replace it with `frankenphp run` (reads Caddyfile) in the dev script.
+
+if grep -q "php artisan serve" composer.json 2>/dev/null; then
+  if [[ "$_OS" == "Darwin" ]]; then
+    sed -i '' 's|php artisan serve|.lake/frankenphp run|g' composer.json
+  else
+    sed -i 's|php artisan serve|.lake/frankenphp run|g' composer.json
+  fi
+  echo "Patched composer.json: php artisan serve → .lake/frankenphp run"
+fi
+
+# ----------------------------
+# INSTALL / ENSURE DEPENDENCIES
+# ----------------------------
+
+if [[ ! -d "vendor" ]]; then
+  echo "Running composer install..."
+  "$FRANKEN_BIN" php-cli "$COMPOSER_BIN" install --no-interaction
+fi
+
+# ----------------------------
+# ENVIRONMENT SETUP
+# ----------------------------
+
+if [[ ! -f ".env" ]]; then
+  cp .env.example .env
+  echo ".env created from .env.example"
+fi
+
+# Align APP_URL with the FrankenPHP port (Laravel defaults to 8000, we use LAKE_PORT)
+if [[ "$_OS" == "Darwin" ]]; then
+  sed -i '' "s|^APP_URL=.*|APP_URL=http://localhost:${LAKE_PORT}|" .env
+else
+  sed -i "s|^APP_URL=.*|APP_URL=http://localhost:${LAKE_PORT}|" .env
+fi
+echo "APP_URL set to http://localhost:${LAKE_PORT}"
+
+if grep -q "^APP_KEY=base64:" .env 2>/dev/null; then
+  echo "Application key already set, skipping."
+else
+  echo "Generating application key..."
+  "$FRANKEN_BIN" php-cli artisan key:generate --ansi
+fi
+
+# Replaces post-autoload-dump: package:discover
+echo "Discovering packages..."
+"$FRANKEN_BIN" php-cli artisan package:discover --ansi
+
+# Replaces post-create-project-cmd: create SQLite database file + migrate
+if [[ ! -f "database/database.sqlite" ]]; then
+  touch database/database.sqlite
+  echo "Created database/database.sqlite"
+fi
+
+echo "Running migrations..."
+"$FRANKEN_BIN" php-cli artisan migrate --graceful --ansi
+
+# ----------------------------
+# STORAGE PERMISSIONS
+# ----------------------------
+
+chmod -R 775 storage bootstrap/cache
+echo "Storage permissions set."
+
+# ----------------------------
+# CREATE DEV Caddyfile
+# ----------------------------
+
+if [[ ! -f "Caddyfile" ]]; then
+  cat > Caddyfile <<CADDYEOF
+{
+    frankenphp
+    order php_server before file_server
+}
+
+http://localhost:${LAKE_PORT} {
+    root * public
+
+    # Route everything through index.php (Laravel router)
+    php_server
+}
+CADDYEOF
+  echo "Caddyfile created (port ${LAKE_PORT})."
+fi
+
+# ----------------------------
+# ADD .lake TO .gitignore
+# ----------------------------
+
+if [[ -f ".gitignore" ]] && ! grep -qxF ".lake" .gitignore; then
+  echo ".lake" >> .gitignore
+  echo "Added .lake to .gitignore"
+fi
+
+# ----------------------------
+# DONE
+# ----------------------------
+
+echo ""
+echo "======================================"
+echo " Lake is ready"
+echo "======================================"
+echo ""
+echo "Start dev server (FrankenPHP + queue + logs + Vite):"
+echo "  .lake/composer run dev"
+echo ""
+echo "Then open: http://localhost:${LAKE_PORT}"
+echo ""
+echo "Artisan commands:"
+echo "  .lake/php artisan <command>"
+echo ""
+echo "Composer commands:"
+echo "  .lake/composer require <package>"
+echo ""
