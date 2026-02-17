@@ -29,6 +29,19 @@ _lake_logo
 unset -f _lake_logo
 
 _say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+_confirm() {
+  local _ans
+  printf '\e[1;31m❓ %s [Y/n]:\e[0m ' "$*" >&2
+  read -r _ans </dev/tty
+  _ans="${_ans:-Y}"
+  [[ "$_ans" =~ ^[Yy]$ ]]
+}
+_ask() {  # _ask "Question [default]:" "default_value"
+  local _ans
+  printf '\e[1;31m❓ %s\e[0m ' "$1" >&2
+  read -r _ans </dev/tty
+  echo "${_ans:-${2:-}}"
+}
 
 # ======================================
 #  lake.setup
@@ -173,8 +186,7 @@ FRANKEN_VERSION="${FRANKEN_VERSION:-latest}"   # override: FRANKEN_VERSION=1.11.
 
 # If LAKE_PORT is not set via env, prompt the user (default: 8090)
 if [[ -z "${LAKE_PORT:-}" ]]; then
-  read -rp "Dev server port [8090]: " _input_port </dev/tty
-  LAKE_PORT="${_input_port:-8090}"
+  LAKE_PORT=$(_ask "Dev server port [8090]:" "8090")
 fi
 COMPOSER_URL="https://getcomposer.org/composer.phar"
 
@@ -248,6 +260,13 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Export it as an env var so Symfony's PhpExecutableFinder picks up this shim.
 export PHP_BINARY="$DIR/php"
 export PATH="$DIR:$PATH"
+_confirm() {
+  local _ans
+  printf '\e[1;31m❓ %s [Y/n]:\e[0m ' "$*" >&2
+  read -r _ans </dev/tty
+  _ans="${_ans:-Y}"
+  [[ "$_ans" =~ ^[Yy]$ ]]
+}
 # Auto-patch PHP_BINARY references in vendor/ when packages change.
 # Compare marker timestamp against installed.json so new packages get patched.
 if [[ -d "vendor" ]] && [[ -f "$DIR/fix-php-binary" ]]; then
@@ -258,8 +277,21 @@ if [[ -d "vendor" ]] && [[ -f "$DIR/fix-php-binary" ]]; then
     _need_patch=1
   fi
   if [[ $_need_patch -eq 1 ]]; then
-    "$DIR/frankenphp" php-cli "$DIR/fix-php-binary" "$(pwd)/vendor" 2>/dev/null
-    touch "vendor/.lake-patched"
+    _patch_pkgs=$("$DIR/frankenphp" php-cli "$DIR/fix-php-binary" --list "$(pwd)/vendor" 2>/dev/null)
+    if [[ -n "$_patch_pkgs" ]]; then
+      printf '\e[31m⚠  PHP_BINARY Patch Warning\e[0m\n' >&2
+      printf '\e[31m   New vendor packages need patching for FrankenPHP compatibility:\e[0m\n' >&2
+      while IFS= read -r _pkg; do
+        printf '   \e[33m• %s\e[0m\n' "$_pkg" >&2
+      done <<< "$_patch_pkgs"
+      if _confirm "Apply patches to vendor files?"; then
+        "$DIR/frankenphp" php-cli "$DIR/fix-php-binary" "$(pwd)/vendor" 2>/dev/null
+        touch "$(pwd)/vendor/.lake-patched"
+      fi
+    else
+      # No new patches needed; just update marker
+      touch "$(pwd)/vendor/.lake-patched"
+    fi
   fi
 fi
 # Composer passes "-d allow_url_fopen=1 -d disable_functions=" before the script.
@@ -295,8 +327,11 @@ fi
 cat > "$TOOLS_DIR/fix-php-binary" <<'FIXEOF'
 #!/usr/bin/env php
 <?php
+$listOnly = in_array('--list', $argv);
+$filteredArgv = array_values(array_filter($argv, fn($a) => $a !== '--list'));
+
 // Accept vendor path as argument (used by .lake/php shim), fall back to CWD then script parent.
-$vendor = $argv[1] ?? (is_dir(getcwd() . '/vendor') ? getcwd() . '/vendor' : dirname(__DIR__) . '/vendor');
+$vendor = $filteredArgv[1] ?? (is_dir(getcwd() . '/vendor') ? getcwd() . '/vendor' : dirname(__DIR__) . '/vendor');
 if (!is_dir($vendor)) exit(0);
 
 $marker = '/*lake:phpbin*/';
@@ -307,6 +342,7 @@ $rii = new RecursiveIteratorIterator(
 );
 
 $count = 0;
+$packages = [];
 foreach ($rii as $file) {
     if ($file->getExtension() !== 'php') continue;
     $content = file_get_contents($path = $file->getPathname());
@@ -325,9 +361,26 @@ foreach ($rii as $file) {
     $patched = str_replace('(PHP_BINARY)',  "($fallback)",  $patched);
 
     if ($patched !== $content) {
-        file_put_contents($path, $patched);
-        $count++;
+        if ($listOnly) {
+            // Extract package name: vendor/org/pkg/... -> org/pkg
+            $rel = ltrim(str_replace(realpath($vendor), '', realpath($path)), DIRECTORY_SEPARATOR);
+            $parts = explode(DIRECTORY_SEPARATOR, $rel);
+            if (count($parts) >= 2) {
+                $pkg = $parts[0] . '/' . $parts[1];
+                $packages[$pkg] = true;
+            }
+        } else {
+            file_put_contents($path, $patched);
+            $count++;
+        }
     }
+}
+
+if ($listOnly) {
+    foreach (array_keys($packages) as $pkg) {
+        echo $pkg . PHP_EOL;
+    }
+    exit(0);
 }
 
 if ($count > 0) {
@@ -453,9 +506,26 @@ if [[ ! -d "vendor" ]]; then
   "$FRANKEN_BIN" php-cli "$COMPOSER_BIN" install --no-interaction
 fi
 
-# Run the PHP_BINARY fixer (subsequent runs are triggered automatically by Composer).
+# Run the PHP_BINARY fixer with user consent.
 if [[ -d "vendor" ]]; then
-  "$FRANKEN_BIN" php-cli "$TOOLS_DIR/fix-php-binary"
+  _patch_pkgs=$("$FRANKEN_BIN" php-cli "$TOOLS_DIR/fix-php-binary" --list 2>/dev/null)
+  if [[ -n "$_patch_pkgs" ]]; then
+    echo ""
+    printf '\e[31m⚠  PHP_BINARY Patch Warning\e[0m\n'
+    printf '\e[31m   FrankenPHP leaves PHP_BINARY empty. Lake will patch these vendor packages\e[0m\n'
+    printf '\e[31m   to use the PHP_BINARY environment variable instead:\e[0m\n'
+    echo ""
+    while IFS= read -r _pkg; do
+      printf '   \e[33m• %s\e[0m\n' "$_pkg"
+    done <<< "$_patch_pkgs"
+    echo ""
+    if _confirm "Apply patches to vendor files?"; then
+      "$FRANKEN_BIN" php-cli "$TOOLS_DIR/fix-php-binary"
+      _say "PHP_BINARY patched in vendor packages."
+    else
+      _say "Skipped PHP_BINARY patching. Some packages may not work correctly under FrankenPHP."
+    fi
+  fi
 fi
 
 # ----------------------------
@@ -542,9 +612,7 @@ if [[ -f ".mcp.json" ]] && grep -qE '"command"\s*:\s*"php"' .mcp.json 2>/dev/nul
   echo ""
   _say "Detected .mcp.json with \"command\": \"php\"."
   _say "Lake needs to change this to \".lake/php\" (no system PHP available)."
-  read -rp "Patch .mcp.json? [Y/n]: " _mcp_confirm </dev/tty
-  _mcp_confirm="${_mcp_confirm:-Y}"
-  if [[ "$_mcp_confirm" =~ ^[Yy]$ ]]; then
+  if _confirm "Patch .mcp.json?"; then
     "$FRANKEN_BIN" php-cli -r "
       \$path = '.mcp.json';
       \$content = file_get_contents(\$path);
