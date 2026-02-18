@@ -62,7 +62,7 @@ _version_gt() {
 #  No Docker. No local PHP required.
 # ======================================
 
-LAKE_SETUP_VERSION="0.1.0"
+LAKE_SETUP_VERSION="0.2.0"
 
 # ----------------------------
 # --help FLAG
