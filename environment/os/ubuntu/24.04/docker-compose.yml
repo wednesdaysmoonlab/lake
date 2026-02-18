@@ -1,0 +1,19 @@
+services:
+  ubuntu-2404:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lake-test-ubuntu-2404
+    container_name: lake-ubuntu-24.04
+
+    # Keep stdin + tty open so the container behaves like an interactive
+    # SSH session into a cloud server.
+    stdin_open: true
+    tty: true
+
+    # Expose a port range for the lakeup dev server.
+    # Override LAKE_PORT inside the container as needed.
+    ports:
+      - "8090:8090"
+
+    command: bash
