@@ -79,6 +79,7 @@ Commands:
   purge         Remove everything in this directory except lakeup, .claude, .git, .gitignore, CLAUDE.md, and README.md
   clean         Remove Laravel app files only; keep .lake/ (FrankenPHP, Composer, installer)
   update        Check for a newer version of lakeup and update in-place
+  version       Show lakeup and Laravel versions
   help          Show this help message
 
 Environment overrides:
@@ -196,6 +197,29 @@ if [[ "${1:-}" == "update" ]]; then
     _say "Updated to v${LATEST_VERSION}. Run ./lakeup to bootstrap."
   else
     _say "Update cancelled."
+  fi
+  exit 0
+fi
+
+# ----------------------------
+# version COMMAND
+# ----------------------------
+
+if [[ "${1:-}" == "version" ]]; then
+  _say "lakeup v${LAKE_SETUP_VERSION}"
+  if [[ -f "composer.lock" ]]; then
+    LARAVEL_VERSION=$(grep -A2 '"name": "laravel/framework"' composer.lock \
+      | grep '"version"' | head -1 \
+      | sed 's/.*"version": "\([^"]*\)".*/\1/')
+    if [[ -n "$LARAVEL_VERSION" ]]; then
+      _say "Laravel ${LARAVEL_VERSION}"
+    else
+      _say "Laravel: installed (version not detected)"
+    fi
+  elif [[ -f "artisan" ]]; then
+    _say "Laravel: installed (no composer.lock found)"
+  else
+    _say "Laravel: not installed"
   fi
   exit 0
 fi
