@@ -201,6 +201,18 @@ if [[ "${1:-}" == "update" ]]; then
 fi
 
 # ----------------------------
+# EXISTING PROJECT GUARD
+# ----------------------------
+
+if [[ -f "artisan" ]]; then
+  _say "A Laravel project already exists in this directory."
+  _say "To start fresh, run one of:"
+  _say "  ./lakeup clean   — remove Laravel files, keep .lake/ binaries"
+  _say "  ./lakeup purge   — remove everything and start over"
+  exit 1
+fi
+
+# ----------------------------
 # INTRODUCTION
 # ----------------------------
 
