@@ -35,19 +35,12 @@ No PHP, no Composer, no Docker needed on the host machine.
 
 ## Getting Started
 
-### Option A — One-liner (curl)
-
-In an empty directory:
+Create an empty directory for your project, then download and run `lakeup` inside it:
 
 ```bash
-curl -fsSL https://github.com/wednesdaysmoonlab/lake/releases/latest/download/lakeup | bash
-```
-
-### Option B — Download first
-
-Place `lakeup` in an empty directory and make it executable:
-
-```bash
+mkdir my-app
+cd my-app
+curl -fsSL https://github.com/wednesdaysmoonlab/lake/releases/latest/download/lakeup -o lakeup
 chmod +x lakeup
 ./lakeup
 ```
