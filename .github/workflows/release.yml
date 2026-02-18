@@ -14,6 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify version matches tag
+        run: |
+          SCRIPT_VERSION=$(grep 'LAKE_SETUP_VERSION=' lakeup | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          TAG_VERSION="${{ github.ref_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          if [[ "$SCRIPT_VERSION" != "$TAG_VERSION" ]]; then
+            echo "Version mismatch: LAKE_SETUP_VERSION=\"$SCRIPT_VERSION\" in script, but tag is \"${{ github.ref_name }}\""
+            exit 1
+          fi
+          echo "Version check passed: v$SCRIPT_VERSION"
+
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

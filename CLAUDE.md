@@ -6,6 +6,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Lake is a single-file bash bootstrap script (`lakeup`) that provisions a full Laravel + FrankenPHP development environment with zero host-level dependencies (no PHP, no Docker, no Composer required).
 
+## Releasing
+
+Releases are automated via `.github/workflows/release.yml`. When a version tag is pushed, GitHub Actions creates a release and attaches `lakeup` as the only downloadable asset.
+
+```bash
+# 1. Commit your changes
+git add lakeup
+git commit -m "your message"
+git push origin main
+
+# 2. Tag and push — this triggers the release workflow
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The release will appear at `github.com/<org>/laravel-lake/releases/tag/v1.0.0` with `lakeup` available for direct download.
+
+Users can then install via:
+```bash
+curl -fsSL https://github.com/<org>/laravel-lake/releases/latest/download/lakeup | bash
+```
+
+Use [semver](https://semver.org): `v1.0.0` (breaking), `v1.1.0` (features), `v1.0.1` (fixes).
+
 ## Commands
 
 After running `./lakeup` once, the project is set up. Daily commands all go through the `.lake/` shims:
