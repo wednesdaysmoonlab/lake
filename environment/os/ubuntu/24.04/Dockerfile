@@ -2,24 +2,18 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies that lakeup requires or benefits from:
-#   curl  — required: downloads FrankenPHP and composer.phar
-#   ca-certificates — required for HTTPS downloads via curl
-#   nodejs / npm — optional: needed by Vite (Laravel dev server)
-#   git   — useful for testing git-adjacent behaviour in lakeup (purge/clean keep .git)
-#   libcap2-bin — lets FrankenPHP bind to ports < 1024 without root (optional)
+# Mimic a minimal Ubuntu 24.04 cloud server image (e.g. DigitalOcean, AWS EC2,
+# GCP Compute Engine). Only packages that cloud providers include by default:
+#   curl + ca-certificates — almost universally pre-installed on cloud images
+#   git                   — commonly included; useful for cloning the repo
+# Nothing else. No Node, no PHP, no Composer — lakeup must handle everything.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
-        nodejs \
-        npm \
-        libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /workspace
 
-# Default to a long-running shell so `docker compose up` keeps the container
-# alive and you can exec into it, or override CMD for automated test runs.
 CMD ["bash"]

@@ -1,35 +1,19 @@
 services:
-  test-server:
+  ubuntu-2404:
     build:
       context: .
       dockerfile: Dockerfile
-    image: lake-ubuntu-2404-test
-    container_name: lake-test-server
+    image: lake-test-ubuntu-2404
+    container_name: lake-test-ubuntu-2404
 
-    # Mount the repository root into /app so lakeup runs against live source.
-    # The bind-mount is read-write so the script can create .lake/, vendor/, etc.
-    volumes:
-      - ../../../../:/app
-
-    # Expose the FrankenPHP dev-server port.
-    # LAKE_PORT below must match the host-side port.
-    ports:
-      - "8090:8090"
-
-    # Environment overrides that skip interactive prompts in lakeup:
-    #   FRANKEN_VERSION — pin a specific release (omit to use latest)
-    #   LAKE_PORT       — port FrankenPHP listens on inside the container
-    environment:
-      LAKE_PORT: "8090"
-      # FRANKEN_VERSION: "1.4.4"
-
-    # Keep stdin open so TTY-dependent reads inside lakeup (/dev/tty) work
-    # when you exec into the container interactively.
+    # Keep stdin + tty open so the container behaves like an interactive
+    # SSH session into a cloud server.
     stdin_open: true
     tty: true
 
-    # Keep the container running; exec in with:
-    #   docker compose exec test-server bash
-    # Then run:
-    #   FRANKEN_VERSION=1.4.4 LAKE_PORT=8090 ./lakeup
+    # Expose a port range for the lakeup dev server.
+    # Override LAKE_PORT inside the container as needed.
+    ports:
+      - "8090:8090"
+
     command: bash
