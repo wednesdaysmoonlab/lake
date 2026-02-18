@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# release — prepare and tag a new lakeup release
+set -euo pipefail
+
+REPO="wednesdaysmoonlab/lake"
+LAKEUP="lakeup"
+
+_say()  { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+_err()  { printf '\e[1;31m✖ %s\e[0m\n' "$*" >&2; exit 1; }
+_ask()  {
+  local _ans
+  printf '\e[1;31m❓ %s\e[0m ' "$1" >&2
+  read -r _ans </dev/tty
+  echo "${_ans:-${2:-}}"
+}
+
+# ── 1. Must be on main ───────────────────────────────────────────────────────
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+[[ "$BRANCH" == "main" ]] || _err "Not on main (currently on '$BRANCH'). Switch to main first."
+_say "Branch: main ✓"
+
+# ── 2. Clean working tree ────────────────────────────────────────────────────
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  _err "Uncommitted changes detected. Commit or stash them first."
+fi
+_say "Working tree: clean ✓"
+
+# ── 3. Pull latest ──────────────────────────────────────────────────────────
+_say "Pulling latest from origin/main…"
+git pull origin main
+
+# ── 4. Compare versions ─────────────────────────────────────────────────────
+LOCAL_VERSION=$(grep -E '^LAKE_SETUP_VERSION=' "$LAKEUP" | head -1 | cut -d'"' -f2)
+[[ -n "$LOCAL_VERSION" ]] || _err "Could not read LAKE_SETUP_VERSION from $LAKEUP."
+
+_say "Version in lakeup : v${LOCAL_VERSION}"
+
+RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null) || true
+if [[ -z "$RELEASE_JSON" ]] || echo "$RELEASE_JSON" | grep -q '"message": "Not Found"'; then
+  _say "Latest GitHub release : (none)"
+  LATEST_VERSION=""
+else
+  LATEST_VERSION=$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/')
+  _say "Latest GitHub release : v${LATEST_VERSION}"
+fi
+
+# ── 5. Ask for new version ───────────────────────────────────────────────────
+DEFAULT_TAG="v${LOCAL_VERSION}"
+NEW_TAG=$(_ask "Release tag to create [${DEFAULT_TAG}]:" "$DEFAULT_TAG")
+
+# Normalise — ensure leading 'v'
+[[ "$NEW_TAG" == v* ]] || NEW_TAG="v${NEW_TAG}"
+NEW_VERSION="${NEW_TAG#v}"
+
+# Basic semver check
+if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  _err "Tag '${NEW_TAG}' does not look like a valid semver (X.Y.Z)."
+fi
+
+# Warn if the tag already exists
+if git rev-parse "$NEW_TAG" &>/dev/null; then
+  _err "Tag ${NEW_TAG} already exists locally. Choose a different version."
+fi
+
+echo ""
+_say "Will create and push tag: ${NEW_TAG}"
+printf '\e[1;31m❓ Proceed? [Y/n]:\e[0m ' >&2
+read -r _confirm </dev/tty
+_confirm="${_confirm:-Y}"
+[[ "$_confirm" =~ ^[Yy]$ ]] || { _say "Aborted."; exit 0; }
+
+# ── 6. Create tag ────────────────────────────────────────────────────────────
+git tag "$NEW_TAG"
+_say "Tag ${NEW_TAG} created ✓"
+
+# ── 7. Push tag ──────────────────────────────────────────────────────────────
+_say "Pushing ${NEW_TAG} to origin…"
+git push origin "$NEW_TAG"
+_say "Done! Release workflow will trigger at:"
+_say "  https://github.com/${REPO}/releases/tag/${NEW_TAG}"
