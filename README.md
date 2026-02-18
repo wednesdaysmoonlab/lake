@@ -40,7 +40,7 @@ No PHP, no Composer, no Docker needed on the host machine.
 In an empty directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wednesdaysmoonlab/lake/main/lakeup | bash
+curl -fsSL https://github.com/wednesdaysmoonlab/lake/releases/latest/download/lakeup | bash
 ```
 
 ### Option B — Download first
