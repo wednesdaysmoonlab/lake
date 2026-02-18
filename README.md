@@ -125,9 +125,24 @@ FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lakeup
 ## Commands
 
 ```bash
-./lakeup help    # Show usage
-./lakeup purge   # Remove everything except lakeup and .claude
-./lakeup clean   # Remove Laravel files only, keep .lake/ (faster reinstall)
+./lakeup help      # Show usage
+./lakeup version   # Show lakeup and Laravel versions
+./lakeup purge     # Remove everything except lakeup and .claude
+./lakeup clean     # Remove Laravel files only, keep .lake/ (faster reinstall)
+./lakeup update    # Update lakeup to the latest release
+```
+
+### `version`
+
+```bash
+./lakeup version
+```
+
+Prints the current version of `lakeup` and the installed Laravel version (read from `composer.lock` — no PHP required).
+
+```
+✦ lakeup v0.2.1
+✦ Laravel v12.4.0
 ```
 
 ### `purge` vs `clean`
