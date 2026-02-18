@@ -62,7 +62,7 @@ _version_gt() {
 #  No Docker. No local PHP required.
 # ======================================
 
-LAKE_SETUP_VERSION="0.2.0"
+LAKE_SETUP_VERSION="0.2.1"
 
 # ----------------------------
 # --help FLAG
@@ -198,6 +198,18 @@ if [[ "${1:-}" == "update" ]]; then
     _say "Update cancelled."
   fi
   exit 0
+fi
+
+# ----------------------------
+# EXISTING PROJECT GUARD
+# ----------------------------
+
+if [[ -f "artisan" ]]; then
+  _say "A Laravel project already exists in this directory."
+  _say "To start fresh, run one of:"
+  _say "  ./lakeup clean   — remove Laravel files, keep .lake/ binaries"
+  _say "  ./lakeup purge   — remove everything and start over"
+  exit 1
 fi
 
 # ----------------------------
