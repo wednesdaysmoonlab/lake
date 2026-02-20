@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Standalone wrapper for the _version_gt function extracted from lakeup.
+# Keep this in sync with the implementation in lakeup.
+# Tests call: bash tests/helpers/version_gt "1.0.0" "0.9.9"  → exit 0 (true)
+
+_version_gt() {
+  # Returns 0 (true) if $1 > $2  (semver X.Y.Z)
+  local IFS='.'
+  local -a a b
+  read -ra a <<< "$1"
+  read -ra b <<< "$2"
+  for i in 0 1 2; do
+    local av="${a[$i]:-0}" bv="${b[$i]:-0}"
+    (( av > bv )) && return 0
+    (( av < bv )) && return 1
+  done
+  return 1  # equal
+}
+
+_version_gt "$@"
