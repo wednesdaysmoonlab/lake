@@ -32,34 +32,11 @@ All binaries and tools are isolated inside `.lake/` and excluded from git.
 
 ## Who Is Lake For?
 
-### Beginners — Just Start Building
+🌱 **Beginners** — Never set up PHP before? No problem! One command gives you a fully running Laravel app — no tutorials, no broken configs, no tears.
 
-Never set up PHP before? Never touched Composer or Docker? That is completely fine.
+⚡ **Mid-level Developers** — Pick your stack, start building. All standard Laravel workflows just work, and every environment is identical across machines.
 
-Lake asks nothing of your machine. One command downloads everything it needs and hands you a running Laravel app. No tutorials about environment setup. No forum posts about broken Homebrew formulas. No version conflicts with whatever else is on your system.
-
-This also makes Lake a natural entry point if you come from **Node.js, Python, Ruby, or any other language** and want to explore the PHP world — you get a modern, production-grade stack without paying the PHP setup tax first.
-
-> `curl` the script, run it, start coding.
-
-### Mid-level Developers — Move Fast Without Cutting Corners
-
-You know what you want to build. Lake gets out of your way and lets you build it.
-
-- Pick your stack interactively — Livewire, Inertia/React, Inertia/Vue, Breeze, or plain — on first run.
-- All standard Laravel workflows work as expected: `artisan`, `composer`, tests, queues, Vite HMR.
-- Every environment is identical — `.lake/` is self-contained, so your laptop, a teammate's laptop, and a CI runner all run the same binary against the same app.
-- Switching projects means switching directories — no global version managers, no `phpenv use`, no Docker context switching.
-
-### Senior Developers — Sane Defaults, Zero Ceremony
-
-Lake is opinionated where opinions matter and invisible everywhere else.
-
-- **Production parity in dev** — FrankenPHP is the same binary in both environments. No more "works on `php -S`, breaks on nginx."
-- **Instant onboarding** — new team members drop `lakeup` in their clone and are running in minutes, not hours.
-- **Reproducible by design** — pin `FRANKEN_VERSION` in CI, commit the `Caddyfile`, done. No surprise upgrades.
-- **No global footprint** — Lake never touches system PHP, Homebrew, or global Composer. It cannot break other projects.
-- **FrankenPHP features available out of the box** — early hints, Zstandard compression, native modules — without any custom server configuration.
+🏗️ **Senior Developers** — Production parity in dev, zero global footprint, instant team onboarding. Lake is opinionated where it matters and invisible everywhere else.
 
 ---
 
