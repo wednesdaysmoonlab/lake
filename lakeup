@@ -830,6 +830,26 @@ if [[ -f ".mcp.json" ]] && grep -qE '"command"\s*:\s*"php"' .mcp.json 2>/dev/nul
 fi
 
 # ----------------------------
+# LARAVEL OCTANE
+# ----------------------------
+
+if grep -q '"laravel/octane"' composer.json 2>/dev/null; then
+    _say "Laravel Octane already installed, skipping."
+else
+    echo ""
+    _say "Laravel Octane supercharges FrankenPHP performance."
+    if _confirm "Install Laravel Octane (with FrankenPHP driver)?"; then
+        _say "Installing laravel/octane..."
+        "$TOOLS_DIR/composer" require laravel/octane
+        _say "Configuring Octane for FrankenPHP..."
+        "$TOOLS_DIR/php" artisan octane:install --server=frankenphp --no-interaction
+        _say "Laravel Octane installed and configured."
+    else
+        _say "Skipped Laravel Octane."
+    fi
+fi
+
+# ----------------------------
 # DONE
 # ----------------------------
 
