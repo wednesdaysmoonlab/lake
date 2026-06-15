@@ -466,15 +466,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Export it as an env var so Symfony's PhpExecutableFinder picks up this shim.
 export PHP_BINARY="$DIR/php"
 export PATH="$DIR:$PATH"
-_confirm() {
-  local _ans
-  printf '\e[1;31m❓ %s [Y/n]:\e[0m ' "$*" >&2
-  read -r _ans </dev/tty
-  _ans="${_ans:-Y}"
-  [[ "$_ans" =~ ^[Yy]$ ]]
-}
 # Auto-patch PHP_BINARY references in vendor/ when packages change.
 # Compare marker timestamp against installed.json so new packages get patched.
+# This is required for FrankenPHP compatibility, so it runs without prompting.
 if [[ -d "vendor" ]] && [[ -f "$DIR/fix-php-binary" ]]; then
   _need_patch=0
   if [[ ! -f "vendor/.lake-patched" ]]; then
@@ -483,21 +477,8 @@ if [[ -d "vendor" ]] && [[ -f "$DIR/fix-php-binary" ]]; then
     _need_patch=1
   fi
   if [[ $_need_patch -eq 1 ]]; then
-    _patch_pkgs=$("$DIR/frankenphp" php-cli "$DIR/fix-php-binary" --list "$(pwd)/vendor" 2>/dev/null)
-    if [[ -n "$_patch_pkgs" ]]; then
-      printf '\e[31m⚠  PHP_BINARY Patch Warning\e[0m\n' >&2
-      printf '\e[31m   New vendor packages need patching for FrankenPHP compatibility:\e[0m\n' >&2
-      while IFS= read -r _pkg; do
-        printf '   \e[33m• %s\e[0m\n' "$_pkg" >&2
-      done <<< "$_patch_pkgs"
-      if _confirm "Apply patches to vendor files?"; then
-        "$DIR/frankenphp" php-cli "$DIR/fix-php-binary" "$(pwd)/vendor" 2>/dev/null
-        touch "$(pwd)/vendor/.lake-patched"
-      fi
-    else
-      # No new patches needed; just update marker
-      touch "$(pwd)/vendor/.lake-patched"
-    fi
+    "$DIR/frankenphp" php-cli "$DIR/fix-php-binary" "$(pwd)/vendor" 2>/dev/null
+    touch "$(pwd)/vendor/.lake-patched"
   fi
 fi
 # Composer passes "-d allow_url_fopen=1 -d disable_functions=" before the script.
@@ -708,25 +689,12 @@ if [[ ! -d "vendor" ]]; then
   "$FRANKEN_BIN" php-cli "$COMPOSER_BIN" install --no-interaction
 fi
 
-# Run the PHP_BINARY fixer with user consent.
+# Auto-patch PHP_BINARY references in vendor (required for FrankenPHP compatibility).
 if [[ -d "vendor" ]]; then
   _patch_pkgs=$("$FRANKEN_BIN" php-cli "$TOOLS_DIR/fix-php-binary" --list 2>/dev/null)
   if [[ -n "$_patch_pkgs" ]]; then
-    echo ""
-    printf '\e[31m⚠  PHP_BINARY Patch Warning\e[0m\n'
-    printf '\e[31m   FrankenPHP leaves PHP_BINARY empty. Lake will patch these vendor packages\e[0m\n'
-    printf '\e[31m   to use the PHP_BINARY environment variable instead:\e[0m\n'
-    echo ""
-    while IFS= read -r _pkg; do
-      printf '   \e[33m• %s\e[0m\n' "$_pkg"
-    done <<< "$_patch_pkgs"
-    echo ""
-    if _confirm "Apply patches to vendor files?"; then
-      "$FRANKEN_BIN" php-cli "$TOOLS_DIR/fix-php-binary"
-      _say "PHP_BINARY patched in vendor packages."
-    else
-      _say "Skipped PHP_BINARY patching. Some packages may not work correctly under FrankenPHP."
-    fi
+    "$FRANKEN_BIN" php-cli "$TOOLS_DIR/fix-php-binary"
+    _say "PHP_BINARY patched in vendor packages for FrankenPHP compatibility."
   fi
 fi
 
@@ -775,7 +743,7 @@ chmod -R 775 storage bootstrap/cache
 _say "Storage permissions set."
 
 # ----------------------------
-# CREATE DEV Caddyfile
+# CREATE / SYNC DEV Caddyfile
 # ----------------------------
 
 if [[ ! -f "Caddyfile" ]]; then
@@ -793,6 +761,16 @@ http://localhost:${LAKE_PORT} {
 }
 CADDYEOF
   _say "Caddyfile created (port ${LAKE_PORT})."
+else
+  # Keep the Caddyfile port in sync with LAKE_PORT (like APP_URL above).
+  if ! grep -q "http://localhost:${LAKE_PORT} {" Caddyfile; then
+    if [[ "$_OS" == "Darwin" ]]; then
+      sed -i '' -E "s|http://localhost:[0-9]+ \{|http://localhost:${LAKE_PORT} {|" Caddyfile
+    else
+      sed -i -E "s|http://localhost:[0-9]+ \{|http://localhost:${LAKE_PORT} {|" Caddyfile
+    fi
+    _say "Caddyfile port synced to ${LAKE_PORT}."
+  fi
 fi
 
 # ----------------------------
@@ -827,26 +805,6 @@ if [[ -f ".mcp.json" ]] && grep -qE '"command"\s*:\s*"php"' .mcp.json 2>/dev/nul
   else
     _say "Skipped .mcp.json patching."
   fi
-fi
-
-# ----------------------------
-# LARAVEL OCTANE
-# ----------------------------
-
-if grep -q '"laravel/octane"' composer.json 2>/dev/null; then
-    _say "Laravel Octane already installed, skipping."
-else
-    echo ""
-    _say "Laravel Octane supercharges FrankenPHP performance."
-    if _confirm "Install Laravel Octane (with FrankenPHP driver)?"; then
-        _say "Installing laravel/octane..."
-        "$TOOLS_DIR/composer" require laravel/octane
-        _say "Configuring Octane for FrankenPHP..."
-        "$TOOLS_DIR/php" artisan octane:install --server=frankenphp --no-interaction
-        _say "Laravel Octane installed and configured."
-    else
-        _say "Skipped Laravel Octane."
-    fi
 fi
 
 # ----------------------------
