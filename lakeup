@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+LAKE_SETUP_VERSION="0.6.0"
+
 _lake_logo() {
   local sky=$'\e[38;5;117m' db=$'\e[38;5;27m' ls=$'\e[38;5;153m' r=$'\e[0m'
   local line out i char
@@ -29,6 +31,9 @@ _lake_logo
 unset -f _lake_logo
 
 _say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+echo ""
+_say "lakeup v${LAKE_SETUP_VERSION}"
+echo ""
 _confirm() {
   local _ans
   printf '\e[1;31m❓ %s [Y/n]:\e[0m ' "$*" >&2
@@ -36,11 +41,51 @@ _confirm() {
   _ans="${_ans:-Y}"
   [[ "$_ans" =~ ^[Yy]$ ]]
 }
+_confirm_no() {  # like _confirm, but defaults to NO (safe for curl | bash / no TTY)
+  local _ans
+  printf '\e[1;31m❓ %s [y/N]:\e[0m ' "$*" >&2
+  read -r _ans </dev/tty 2>/dev/null || _ans=""
+  _ans="${_ans:-N}"
+  [[ "$_ans" =~ ^[Yy]$ ]]
+}
 _ask() {  # _ask "Question [default]:" "default_value"
   local _ans
   printf '\e[1;31m❓ %s\e[0m ' "$1" >&2
   read -r _ans </dev/tty
   echo "${_ans:-${2:-}}"
+}
+_seed_boost_php_path() {
+  # If Laravel Boost is installed, point its MCP php binary at the Lake shim.
+  # Boost resolves every agent's MCP `command` from env('BOOST_PHP_EXECUTABLE_PATH')
+  # (config/boost.php → executable_paths.php), so seeding this single .env line wires
+  # ALL coding agents (Claude Code, Cursor, Codex, Copilot, Junie, Kiro, Zed, ...) to
+  # .lake/php at once — for the user's own `boost:install` now and every future run.
+  # Absolute path is used on purpose: Junie and Amp force absolute MCP command paths.
+  # NOTE: keep in sync with tests/helpers/seed_boost_php_path
+  [[ -d "vendor/laravel/boost" ]] || return 0
+  [[ -f ".env" ]] || return 0
+
+  local target line _tmp _l
+  target="$(pwd)/.lake/php"
+  line="BOOST_PHP_EXECUTABLE_PATH=\"${target}\""
+
+  if grep -q '^BOOST_PHP_EXECUTABLE_PATH=' .env 2>/dev/null; then
+    _tmp="$(mktemp)"
+    while IFS= read -r _l || [[ -n "$_l" ]]; do
+      if [[ "$_l" == BOOST_PHP_EXECUTABLE_PATH=* ]]; then
+        printf '%s\n' "$line"
+      else
+        printf '%s\n' "$_l"
+      fi
+    done < .env > "$_tmp"
+    mv "$_tmp" .env
+  else
+    # Ensure a trailing newline before appending, so we never join onto a previous line.
+    [[ -n "$(tail -c1 .env 2>/dev/null)" ]] && printf '\n' >> .env
+    printf '%s\n' "$line" >> .env
+  fi
+
+  _say "Boost detected: set BOOST_PHP_EXECUTABLE_PATH → .lake/php in .env (wires all MCP agents)."
 }
 _version_gt() {
   # Returns 0 (true) if $1 > $2  (semver X.Y.Z)
@@ -61,8 +106,6 @@ _version_gt() {
 #  Laravel + FrankenPHP bootstrap
 #  No Docker. No local PHP required.
 # ======================================
-
-LAKE_SETUP_VERSION="0.5.3"
 
 # ----------------------------
 # --help FLAG
@@ -805,6 +848,29 @@ if [[ -f ".mcp.json" ]] && grep -qE '"command"\s*:\s*"php"' .mcp.json 2>/dev/nul
   else
     _say "Skipped .mcp.json patching."
   fi
+fi
+
+# ----------------------------
+# LARAVEL BOOST (optional)
+# ----------------------------
+
+# Boost gives AI coding agents rich, version-accurate Laravel context via MCP.
+# Offer to install it (default NO — keeps `curl | bash` unattended-safe), then
+# wire its MCP php binary to the Lake shim so `boost:install` works for any agent.
+if [[ ! -d "vendor/laravel/boost" ]]; then
+  echo ""
+  _say "Laravel Boost adds Laravel-aware context for AI coding agents (optional)."
+  if _confirm_no "Install Laravel Boost now?"; then
+    _say "Installing laravel/boost (dev)..."
+    .lake/composer require laravel/boost --dev
+  fi
+fi
+
+# If Boost is present (just installed, or pulled in by a starter kit), seed the
+# .env override so every agent's MCP config points at .lake/php — no system PHP.
+if [[ -d "vendor/laravel/boost" ]]; then
+  _seed_boost_php_path
+  _say "Next: run '.lake/php artisan boost:install' to configure your AI agent."
 fi
 
 # ----------------------------

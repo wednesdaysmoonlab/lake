@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Standalone wrapper for the _seed_boost_php_path function extracted from lakeup.
+# Keep this in sync with the implementation in lakeup.
+# Operates on the current working directory's .env / vendor tree.
+# Usage: cd <project>; bash tests/helpers/seed_boost_php_path
+
+_say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+
+_seed_boost_php_path() {
+  [[ -d "vendor/laravel/boost" ]] || return 0
+  [[ -f ".env" ]] || return 0
+
+  local target line _tmp _l
+  target="$(pwd)/.lake/php"
+  line="BOOST_PHP_EXECUTABLE_PATH=\"${target}\""
+
+  if grep -q '^BOOST_PHP_EXECUTABLE_PATH=' .env 2>/dev/null; then
+    _tmp="$(mktemp)"
+    while IFS= read -r _l || [[ -n "$_l" ]]; do
+      if [[ "$_l" == BOOST_PHP_EXECUTABLE_PATH=* ]]; then
+        printf '%s\n' "$line"
+      else
+        printf '%s\n' "$_l"
+      fi
+    done < .env > "$_tmp"
+    mv "$_tmp" .env
+  else
+    [[ -n "$(tail -c1 .env 2>/dev/null)" ]] && printf '\n' >> .env
+    printf '%s\n' "$line" >> .env
+  fi
+
+  _say "Boost detected: set BOOST_PHP_EXECUTABLE_PATH → .lake/php in .env (wires all MCP agents)."
+}
+
+_seed_boost_php_path "$@"
