@@ -16,26 +16,16 @@ The whole lifecycle is wrapped by the **`./release` CLI** — prefer it over run
 ./release start <name>   # branch feature/<name> off main
 ./release pr             # push branch + open PR into pre-release
 ./release bump <level>   # patch|minor|major|X.Y.Z — edits LAKE_SETUP_VERSION, commits on pre-release
-./release ship           # squash-merge pre-release → main, tag, push → Action builds the release
+./release ship           # open + squash-merge a release PR (pre-release → main), then tag
+./release tag            # tag main with its current version (after a release PR merges)
 ./release status         # current branch, local version, latest GitHub release
 ```
 
-`bump` keeps `LAKE_SETUP_VERSION` in `lakeup` in sync with the git tag — the release workflow fails the build if they mismatch. Destructive steps (merge to main, push tag) prompt for confirmation. There is also a `release` Claude skill that drives this CLI conversationally.
+`bump` keeps `LAKE_SETUP_VERSION` in `lakeup` in sync with the git tag — the release workflow fails the build if they mismatch. Destructive steps (merge, push tag) prompt for confirmation. There is also a `release` Claude skill that drives this CLI conversationally.
 
-Under the hood `ship` runs the equivalent of:
+**`main` is branch-protected — changes must go through a PR.** `ship` therefore opens a release PR `pre-release → main`, squash-merges it, then tags the merged `main`. It never pushes commits to `main` directly. If the ruleset requires an approving review, `gh pr merge` fails; approve/merge the PR on GitHub, then run `./release tag` to finish.
 
-```bash
-# 1. Commit your changes
-git add lakeup
-git commit -m "your message"
-git push origin main
-
-# 2. Tag and push — this triggers the release workflow
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-The release will appear at `github.com/<org>/laravel-lake/releases/tag/v1.0.0` with `lakeup` available for direct download.
+Once the tag is pushed the release appears at `github.com/<org>/laravel-lake/releases/tag/v1.0.0` with `lakeup` available for direct download.
 
 Users can then install via:
 ```bash
