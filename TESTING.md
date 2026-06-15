@@ -237,7 +237,7 @@ When you add a new subcommand (e.g., `./lakeup foo`), create tests that verify:
 
 ## CI
 
-Tests run automatically on every push to `main` or `pre-release` and on every PR targeting `main`. See `.github/workflows/test.yml`.
+Tests run automatically on every push to `main` and on every PR targeting `main`. See `.github/workflows/test.yml`.
 
 To run the same check locally before pushing:
 

@@ -2,13 +2,13 @@
 # release — guided release lifecycle for Lake
 #
 #   ./release start <name>     Branch feature/<name> off main
-#   ./release pr               Push current branch + open PR into pre-release
 #   ./release bump <level>     Bump LAKE_SETUP_VERSION (patch|minor|major|X.Y.Z), commit
-#   ./release ship             Squash-merge pre-release → main, tag, push (→ Action builds release)
+#   ./release pr               Push current branch + open PR into main
+#   ./release tag              Tag main with its current version (after the PR merges)
 #   ./release status           Show current branch, local version, latest GitHub release
 #
 # Every destructive step prints what it will do and asks before running.
-# Branch rule (see .note): features branch off main; bump commits on pre-release.
+# Branch rule (see .note): features branch off main and PR straight into main.
 set -euo pipefail
 
 REPO="wednesdaysmoonlab/lake"
@@ -83,10 +83,10 @@ cmd_pr() {
     _warn "You have uncommitted changes — commit them before opening a PR."
   fi
 
-  _confirm "Push ${branch} and open a PR into pre-release?" || { _say "Aborted."; exit 0; }
+  _confirm "Push ${branch} and open a PR into main?" || { _say "Aborted."; exit 0; }
   git push -u origin "$branch"
-  gh pr create --base pre-release --head "$branch" --fill
-  _say "PR opened into pre-release. Review & merge it on GitHub."
+  gh pr create --base main --head "$branch" --fill
+  _say "PR opened into main. Review & squash-merge it on GitHub, then: ./release tag"
 }
 
 # ── bump <patch|minor|major|X.Y.Z> ───────────────────────────────────────────
@@ -96,9 +96,9 @@ cmd_bump() {
 
   local branch
   branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ "$branch" != "pre-release" ]]; then
-    _warn "You are on '${branch}', not pre-release. Version bumps usually land on pre-release."
-    _confirm "Bump on '${branch}' anyway?" || { _say "Aborted."; exit 0; }
+  if [[ "$branch" == "main" ]]; then
+    _warn "You are on main (protected). Bump on a feature branch instead — see ./release start."
+    _confirm "Bump on main anyway?" || { _say "Aborted."; exit 0; }
   fi
   _require_clean
 
@@ -130,12 +130,7 @@ cmd_bump() {
   [[ "$(_local_version)" == "$new" ]] || _err "Failed to update version in ${LAKEUP}."
 
   git commit -am "chore: bump version to ${new}"
-  _say "Bumped to ${new} and committed. When ready: ./release ship"
-}
-
-# Read LAKE_SETUP_VERSION from a given git ref (e.g. pre-release)
-_version_at() {
-  git show "$1:${LAKEUP}" 2>/dev/null | grep -E '^LAKE_SETUP_VERSION=' | head -1 | cut -d'"' -f2
+  _say "Bumped to ${new} and committed. When ready: ./release pr"
 }
 
 _assert_tag_free() {
@@ -159,60 +154,8 @@ _tag_and_push() {
   _say "  https://github.com/${REPO}/releases/tag/${tag}"
 }
 
-# ── ship ─────────────────────────────────────────────────────────────────────
-# main is protected (changes must go through a PR), so we open/merge a release PR
-# pre-release → main, then tag the merged main. Never pushes commits to main directly.
-cmd_ship() {
-  command -v gh &>/dev/null || _err "GitHub CLI 'gh' not found. Install it: https://cli.github.com"
-  _require_clean
-  git rev-parse --verify pre-release &>/dev/null || _err "No local 'pre-release' branch."
-
-  local version tag
-  version=$(_version_at pre-release)
-  if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    _err "pre-release has invalid version '${version}' in ${LAKEUP}. Run ./release bump first."
-  fi
-  tag="v${version}"
-
-  _say "Releasing : ${tag}"
-  _say "Latest GitHub release : $(_fmt_release "$(_latest_release)")"
-  _assert_tag_free "$tag"
-
-  _confirm "Push pre-release and open a release PR into main?" || { _say "Aborted."; exit 0; }
-  git push origin pre-release
-
-  # Reuse an open PR if one already exists, else create it
-  local pr
-  pr=$(gh pr list --base main --head pre-release --state open --json number -q '.[0].number' 2>/dev/null || true)
-  if [[ -n "$pr" ]]; then
-    _say "Reusing open release PR #${pr}."
-  else
-    gh pr create --base main --head pre-release --title "Release ${tag}" --body "Release ${tag}."
-    pr=$(gh pr list --base main --head pre-release --state open --json number -q '.[0].number')
-  fi
-  _say "Release PR: https://github.com/${REPO}/pull/${pr}"
-
-  if ! _confirm "Squash-merge PR #${pr} into main now?"; then
-    _say "Left PR #${pr} open. After it merges on GitHub, run: ./release tag"
-    exit 0
-  fi
-
-  if gh pr merge "$pr" --squash; then
-    git checkout main
-    git pull origin main
-    local mainver
-    mainver=$(_local_version)
-    [[ "$mainver" == "$version" ]] || _err "main is at ${mainver}, expected ${version} — did the PR merge cleanly?"
-    _tag_and_push "$tag"
-  else
-    _warn "Could not merge automatically (a review may be required)."
-    _say "Merge PR #${pr} on GitHub, then run: ./release tag"
-    exit 0
-  fi
-}
-
 # ── tag ──────────────────────────────────────────────────────────────────────
-# Tag main with its current version. Use after a release PR is merged on GitHub.
+# Tag main with its current version. Use after the feature PR is merged on GitHub.
 cmd_tag() {
   _require_clean
   git checkout main
@@ -244,29 +187,27 @@ cmd_help() {
 release — guided release lifecycle for Lake
 
   ./release start <name>     Branch feature/<name> off main
-  ./release pr               Push current branch + open a PR into pre-release
-  ./release bump <level>     Bump version (patch|minor|major|X.Y.Z), commit on pre-release
-  ./release ship             Open + squash-merge a release PR (pre-release → main), then tag
-  ./release tag              Tag main with its current version (after a release PR merges)
+  ./release bump <level>     Bump version (patch|minor|major|X.Y.Z), commit on the feature branch
+  ./release pr               Push current branch + open a PR into main
+  ./release tag              Tag main with its current version (after the PR merges)
   ./release status           Show branch, local version, latest GitHub release
 
 Typical flow:
   ./release start octane-tuning   # branch off main, develop, commit
-  ./release pr                    # PR → pre-release, review & merge on GitHub
-  ./release bump minor            # on pre-release once PRs are merged
-  ./release ship                  # release PR → main, then tag → release built
+  ./release bump minor            # bump version on the feature branch
+  ./release pr                    # PR → main, review & squash-merge on GitHub
+  ./release tag                   # tag merged main → release built
 
-main is protected (changes go through a PR), so 'ship' never pushes to main directly.
-If a review is required, merge the PR on GitHub, then run: ./release tag
+main is protected (changes go through a PR), so releases never push to main directly.
+Run 'tag' once the PR is squash-merged on GitHub.
 EOF
 }
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
 case "${1:-help}" in
   start)  shift; cmd_start "$@" ;;
-  pr)     shift; cmd_pr "$@" ;;
   bump)   shift; cmd_bump "$@" ;;
-  ship)   shift; cmd_ship "$@" ;;
+  pr)     shift; cmd_pr "$@" ;;
   tag)    shift; cmd_tag "$@" ;;
   status) shift; cmd_status "$@" ;;
   help|-h|--help) cmd_help ;;

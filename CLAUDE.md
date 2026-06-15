@@ -14,16 +14,15 @@ The whole lifecycle is wrapped by the **`./release` CLI** — prefer it over run
 
 ```bash
 ./release start <name>   # branch feature/<name> off main
-./release pr             # push branch + open PR into pre-release
-./release bump <level>   # patch|minor|major|X.Y.Z — edits LAKE_SETUP_VERSION, commits on pre-release
-./release ship           # open + squash-merge a release PR (pre-release → main), then tag
-./release tag            # tag main with its current version (after a release PR merges)
+./release bump <level>   # patch|minor|major|X.Y.Z — edits LAKE_SETUP_VERSION, commits on the feature branch
+./release pr             # push branch + open PR into main
+./release tag            # tag main with its current version (after the PR merges)
 ./release status         # current branch, local version, latest GitHub release
 ```
 
-`bump` keeps `LAKE_SETUP_VERSION` in `lakeup` in sync with the git tag — the release workflow fails the build if they mismatch. Destructive steps (merge, push tag) prompt for confirmation. There is also a `release` Claude skill that drives this CLI conversationally.
+The flow is `feature/* → main (PR, squash) → tag → release` — there is no `pre-release` branch. `bump` keeps `LAKE_SETUP_VERSION` in `lakeup` in sync with the git tag — the release workflow fails the build if they mismatch. Destructive steps (push tag) prompt for confirmation. There is also a `release` Claude skill that drives this CLI conversationally.
 
-**`main` is branch-protected — changes must go through a PR.** `ship` therefore opens a release PR `pre-release → main`, squash-merges it, then tags the merged `main`. It never pushes commits to `main` directly. If the ruleset requires an approving review, `gh pr merge` fails; approve/merge the PR on GitHub, then run `./release tag` to finish.
+**`main` is branch-protected — changes must go through a PR.** `pr` opens a feature PR into `main`; review and squash-merge it on GitHub (a review may be required by the ruleset). Once merged, run `./release tag` to tag the merged `main` and trigger the release build. Nothing ever pushes commits to `main` directly.
 
 Once the tag is pushed the release appears at `github.com/<org>/laravel-lake/releases/tag/v1.0.0` with `lakeup` available for direct download.
 
