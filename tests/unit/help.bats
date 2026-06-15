@@ -49,6 +49,11 @@ load '../test_helper'
   assert_output --partial "update"
 }
 
+@test "help: output lists 'skill' command" {
+  run bash "$LAKEUP" help
+  assert_output --partial "skill"
+}
+
 @test "help: output lists 'version' command" {
   run bash "$LAKEUP" help
   assert_output --partial "version"
