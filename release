@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
-# release — prepare and tag a new lakeup release
+# release — guided release lifecycle for Lake
+#
+#   ./release start <name>     Branch feature/<name> off main
+#   ./release pr               Push current branch + open PR into pre-release
+#   ./release bump <level>     Bump LAKE_SETUP_VERSION (patch|minor|major|X.Y.Z), commit
+#   ./release ship             Squash-merge pre-release → main, tag, push (→ Action builds release)
+#   ./release status           Show current branch, local version, latest GitHub release
+#
+# Every destructive step prints what it will do and asks before running.
+# Branch rule (see .note): features branch off main; bump commits on pre-release.
 set -euo pipefail
 
 REPO="wednesdaysmoonlab/lake"
 LAKEUP="lakeup"
 
+# ── helpers ──────────────────────────────────────────────────────────────────
 _say()  { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+_warn() { printf '\e[1;33m⚠ %s\e[0m\n' "$*" >&2; }
 _err()  { printf '\e[1;31m✖ %s\e[0m\n' "$*" >&2; exit 1; }
 _ask()  {
   local _ans
@@ -13,80 +24,197 @@ _ask()  {
   read -r _ans </dev/tty
   echo "${_ans:-${2:-}}"
 }
+# _confirm "Question?"  → returns 0 on yes (default Y), 1 on no
+_confirm() {
+  local _ans
+  printf '\e[1;31m❓ %s [Y/n]:\e[0m ' "$1" >&2
+  read -r _ans </dev/tty
+  [[ "${_ans:-Y}" =~ ^[Yy]$ ]]
+}
 
-# ── 1. Must be on main ───────────────────────────────────────────────────────
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-[[ "$BRANCH" == "main" ]] || _err "Not on main (currently on '$BRANCH'). Switch to main first."
-_say "Branch: main ✓"
+_require_clean() {
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    _err "Uncommitted changes detected. Commit or stash them first."
+  fi
+}
 
-# ── 2. Clean working tree ────────────────────────────────────────────────────
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  _err "Uncommitted changes detected. Commit or stash them first."
-fi
-_say "Working tree: clean ✓"
+_local_version() {
+  grep -E '^LAKE_SETUP_VERSION=' "$LAKEUP" | head -1 | cut -d'"' -f2
+}
 
-# ── 3. Pull latest ──────────────────────────────────────────────────────────
-_say "Pulling latest from origin/main…"
-git pull origin main
+_latest_release() {
+  local json
+  json=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null) || true
+  if [[ -z "$json" ]] || echo "$json" | grep -q '"message": "Not Found"'; then
+    echo ""
+  else
+    echo "$json" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/'
+  fi
+}
 
-# ── 4. Compare versions ─────────────────────────────────────────────────────
-LOCAL_VERSION=$(grep -E '^LAKE_SETUP_VERSION=' "$LAKEUP" | head -1 | cut -d'"' -f2)
-[[ -n "$LOCAL_VERSION" ]] || _err "Could not read LAKE_SETUP_VERSION from $LAKEUP."
+# Pretty-print a possibly-empty version string for display
+_fmt_release() { [[ -n "$1" ]] && echo "v$1" || echo "(none)"; }
 
-_say "Version in lakeup : v${LOCAL_VERSION}"
+# ── start <name> ─────────────────────────────────────────────────────────────
+cmd_start() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || _err "Usage: ./release start <name>"
+  name="${name#feature/}"   # tolerate an explicit feature/ prefix
+  local branch="feature/${name}"
 
-RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null) || true
-if [[ -z "$RELEASE_JSON" ]] || echo "$RELEASE_JSON" | grep -q '"message": "Not Found"'; then
-  _say "Latest GitHub release : (none)"
-  LATEST_VERSION=""
-else
-  LATEST_VERSION=$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/')
-  _say "Latest GitHub release : v${LATEST_VERSION}"
-fi
+  _require_clean
+  git rev-parse --verify "$branch" &>/dev/null && _err "Branch ${branch} already exists."
 
-# ── 5. Ask for new version ───────────────────────────────────────────────────
-DEFAULT_TAG="v${LOCAL_VERSION}"
-NEW_TAG=$(_ask "Release tag to create [${DEFAULT_TAG}]:" "$DEFAULT_TAG")
+  _say "Branching ${branch} off main."
+  git checkout main
+  git pull origin main
+  git checkout -b "$branch"
+  _say "On ${branch}. Start coding, then: ./release pr"
+}
 
-# Normalise — ensure leading 'v'
-[[ "$NEW_TAG" == v* ]] || NEW_TAG="v${NEW_TAG}"
-NEW_VERSION="${NEW_TAG#v}"
+# ── pr ───────────────────────────────────────────────────────────────────────
+cmd_pr() {
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  [[ "$branch" == feature/* ]] || _err "Not on a feature/* branch (on '$branch'). Use ./release start <name> first."
+  command -v gh &>/dev/null || _err "GitHub CLI 'gh' not found. Install it: https://cli.github.com"
 
-# Basic semver check
-if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  _err "Tag '${NEW_TAG}' does not look like a valid semver (X.Y.Z)."
-fi
+  if [[ -n "$(git status --porcelain)" ]]; then
+    _warn "You have uncommitted changes — commit them before opening a PR."
+  fi
 
-# Warn if the tag already exists locally or on remote
-if git rev-parse "$NEW_TAG" &>/dev/null; then
-  _err "Tag ${NEW_TAG} already exists locally. Choose a different version."
-fi
-if git ls-remote --tags origin "$NEW_TAG" 2>/dev/null | grep -q .; then
-  _err "Tag ${NEW_TAG} already exists on origin. Choose a different version."
-fi
+  _confirm "Push ${branch} and open a PR into pre-release?" || { _say "Aborted."; exit 0; }
+  git push -u origin "$branch"
+  gh pr create --base pre-release --head "$branch" --fill
+  _say "PR opened into pre-release. Review & merge it on GitHub."
+}
 
-# Warn if the chosen version doesn't match LAKE_SETUP_VERSION in lakeup
-if [[ "$NEW_VERSION" != "$LOCAL_VERSION" ]]; then
-  printf '\e[1;33m⚠ Warning: tag %s does not match LAKE_SETUP_VERSION="%s" in lakeup.\e[0m\n' \
-    "$NEW_TAG" "$LOCAL_VERSION" >&2
-  printf '\e[1;31m❓ Continue anyway? [y/N]:\e[0m ' >&2
-  read -r _mismatch </dev/tty
-  [[ "${_mismatch:-N}" =~ ^[Yy]$ ]] || _err "Aborted. Update LAKE_SETUP_VERSION in lakeup first."
-fi
+# ── bump <patch|minor|major|X.Y.Z> ───────────────────────────────────────────
+cmd_bump() {
+  local level="${1:-}"
+  [[ -n "$level" ]] || _err "Usage: ./release bump <patch|minor|major|X.Y.Z>"
 
-echo ""
-_say "Will create and push tag: ${NEW_TAG}"
-printf '\e[1;31m❓ Proceed? [Y/n]:\e[0m ' >&2
-read -r _confirm </dev/tty
-_confirm="${_confirm:-Y}"
-[[ "$_confirm" =~ ^[Yy]$ ]] || { _say "Aborted."; exit 0; }
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  if [[ "$branch" != "pre-release" ]]; then
+    _warn "You are on '${branch}', not pre-release. Version bumps usually land on pre-release."
+    _confirm "Bump on '${branch}' anyway?" || { _say "Aborted."; exit 0; }
+  fi
+  _require_clean
 
-# ── 6. Create tag ────────────────────────────────────────────────────────────
-git tag "$NEW_TAG"
-_say "Tag ${NEW_TAG} created ✓"
+  local cur new
+  cur=$(_local_version)
+  [[ -n "$cur" ]] || _err "Could not read LAKE_SETUP_VERSION from ${LAKEUP}."
 
-# ── 7. Push tag ──────────────────────────────────────────────────────────────
-_say "Pushing ${NEW_TAG} to origin…"
-git push origin "$NEW_TAG"
-_say "Done! Release workflow will trigger at:"
-_say "  https://github.com/${REPO}/releases/tag/${NEW_TAG}"
+  if [[ "$level" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    new="$level"
+  else
+    local major minor patch
+    IFS='.' read -r major minor patch <<<"$cur"
+    case "$level" in
+      patch) new="${major}.${minor}.$((patch + 1))" ;;
+      minor) new="${major}.$((minor + 1)).0" ;;
+      major) new="$((major + 1)).0.0" ;;
+      *)     _err "Unknown level '${level}'. Use patch|minor|major|X.Y.Z." ;;
+    esac
+  fi
+
+  _confirm "Bump version ${cur} → ${new}?" || { _say "Aborted."; exit 0; }
+
+  # Portable in-place edit (BSD vs GNU sed)
+  if sed --version &>/dev/null; then
+    sed -i "s/^LAKE_SETUP_VERSION=\"${cur}\"/LAKE_SETUP_VERSION=\"${new}\"/" "$LAKEUP"
+  else
+    sed -i '' "s/^LAKE_SETUP_VERSION=\"${cur}\"/LAKE_SETUP_VERSION=\"${new}\"/" "$LAKEUP"
+  fi
+  [[ "$(_local_version)" == "$new" ]] || _err "Failed to update version in ${LAKEUP}."
+
+  git commit -am "chore: bump version to ${new}"
+  _say "Bumped to ${new} and committed. When ready: ./release ship"
+}
+
+# ── ship ─────────────────────────────────────────────────────────────────────
+cmd_ship() {
+  _require_clean
+
+  _say "Switching to main and pulling latest…"
+  git checkout main
+  git pull origin main
+
+  _confirm "Squash-merge pre-release → main?" || { _say "Aborted."; git checkout - >/dev/null 2>&1 || true; exit 0; }
+  git merge --squash pre-release
+
+  # Version now comes from the merged-in lakeup
+  local version tag
+  version=$(_local_version)
+  [[ -n "$version" ]] || _err "Could not read LAKE_SETUP_VERSION from ${LAKEUP} after merge."
+  if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    _err "Version '${version}' in ${LAKEUP} is not valid semver. Run ./release bump first."
+  fi
+  tag="v${version}"
+
+  local latest
+  latest=$(_latest_release)
+  _say "Releasing : ${tag}"
+  _say "Latest GitHub release : $(_fmt_release "$latest")"
+
+  if git rev-parse "$tag" &>/dev/null; then
+    _err "Tag ${tag} already exists locally. Run ./release bump to pick a new version."
+  fi
+  if git ls-remote --tags origin "$tag" 2>/dev/null | grep -q .; then
+    _err "Tag ${tag} already exists on origin. Run ./release bump to pick a new version."
+  fi
+
+  echo ""
+  _say "This will commit 'Release ${tag}' to main, push it, then tag and push ${tag}."
+  _confirm "Proceed?" || { _say "Aborted — main has a staged merge you can review or 'git reset --hard origin/main'."; exit 0; }
+
+  git commit -m "Release ${tag}"
+  git push origin main
+
+  git tag "$tag"
+  git push origin "$tag"
+
+  _say "Done! Release workflow will trigger at:"
+  _say "  https://github.com/${REPO}/releases/tag/${tag}"
+}
+
+# ── status ───────────────────────────────────────────────────────────────────
+cmd_status() {
+  local branch latest
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  latest=$(_latest_release)
+  _say "Branch                : ${branch}"
+  _say "Version in lakeup     : v$(_local_version)"
+  _say "Latest GitHub release : $(_fmt_release "$latest")"
+}
+
+# ── help ─────────────────────────────────────────────────────────────────────
+cmd_help() {
+  cat <<'EOF'
+release — guided release lifecycle for Lake
+
+  ./release start <name>     Branch feature/<name> off main
+  ./release pr               Push current branch + open a PR into pre-release
+  ./release bump <level>     Bump version (patch|minor|major|X.Y.Z), commit on pre-release
+  ./release ship             Squash-merge pre-release → main, tag, push (Action builds release)
+  ./release status           Show branch, local version, latest GitHub release
+
+Typical flow:
+  ./release start octane-tuning   # branch off main, develop, commit
+  ./release pr                    # PR → pre-release, review & merge on GitHub
+  ./release bump minor            # on pre-release once PRs are merged
+  ./release ship                  # merge → main, tag, push → release built
+EOF
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+case "${1:-help}" in
+  start)  shift; cmd_start "$@" ;;
+  pr)     shift; cmd_pr "$@" ;;
+  bump)   shift; cmd_bump "$@" ;;
+  ship)   shift; cmd_ship "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  help|-h|--help) cmd_help ;;
+  *) _err "Unknown command '${1}'. Run ./release help." ;;
+esac

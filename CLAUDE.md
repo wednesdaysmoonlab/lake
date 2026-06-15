@@ -10,6 +10,20 @@ Lake is a single-file bash bootstrap script (`lakeup`) that provisions a full La
 
 Releases are automated via `.github/workflows/release.yml`. When a version tag is pushed, GitHub Actions creates a release and attaches `lakeup` as the only downloadable asset.
 
+The whole lifecycle is wrapped by the **`./release` CLI** — prefer it over running the git steps by hand:
+
+```bash
+./release start <name>   # branch feature/<name> off main
+./release pr             # push branch + open PR into pre-release
+./release bump <level>   # patch|minor|major|X.Y.Z — edits LAKE_SETUP_VERSION, commits on pre-release
+./release ship           # squash-merge pre-release → main, tag, push → Action builds the release
+./release status         # current branch, local version, latest GitHub release
+```
+
+`bump` keeps `LAKE_SETUP_VERSION` in `lakeup` in sync with the git tag — the release workflow fails the build if they mismatch. Destructive steps (merge to main, push tag) prompt for confirmation. There is also a `release` Claude skill that drives this CLI conversationally.
+
+Under the hood `ship` runs the equivalent of:
+
 ```bash
 # 1. Commit your changes
 git add lakeup
