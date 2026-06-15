@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAKE_SETUP_VERSION="0.6.0"
+LAKE_SETUP_VERSION="0.7.0"
 
 _lake_logo() {
   local sky=$'\e[38;5;117m' db=$'\e[38;5;27m' ls=$'\e[38;5;153m' r=$'\e[0m'
