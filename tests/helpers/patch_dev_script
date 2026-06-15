@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Standalone wrapper for the dev-script patch extracted from lakeup.
+# Keep this in sync with the implementation in lakeup.
+# Rewrites `php artisan serve [--flag=value ...]` → `.lake/frankenphp run` in
+# the current working directory's composer.json (FrankenPHP is the web server;
+# it does not support PHP's built-in -S server and rejects serve's flags).
+# Usage: cd <project>; bash tests/helpers/patch_dev_script
+
+_say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+
+_patch_dev_script() {
+  local _OS
+  _OS="$(uname -s)"
+
+  if grep -q "php artisan serve" composer.json 2>/dev/null; then
+    if [[ "$_OS" == "Darwin" ]]; then
+      sed -i '' -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
+    else
+      sed -i -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
+    fi
+    _say "Patched composer.json: php artisan serve → .lake/frankenphp run"
+  fi
+}
+
+_patch_dev_script "$@"

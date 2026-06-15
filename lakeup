@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAKE_SETUP_VERSION="0.7.0"
+LAKE_SETUP_VERSION="0.7.1"
 
 _lake_logo() {
   local sky=$'\e[38;5;117m' db=$'\e[38;5;27m' ls=$'\e[38;5;153m' r=$'\e[0m'
@@ -746,12 +746,14 @@ fi
 # Laravel's default dev script runs `php artisan serve` which uses PHP's
 # built-in -S server. FrankenPHP doesn't support -S — it IS the web server.
 # Replace it with `frankenphp run` (reads Caddyfile) in the dev script.
+# Recent Laravel skeletons append flags (e.g. `--host=localhost`) to the serve
+# command; `frankenphp run` rejects those, so strip any trailing `--flag=value`.
 
 if grep -q "php artisan serve" composer.json 2>/dev/null; then
   if [[ "$_OS" == "Darwin" ]]; then
-    sed -i '' 's|php artisan serve|.lake/frankenphp run|g' composer.json
+    sed -i '' -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
   else
-    sed -i 's|php artisan serve|.lake/frankenphp run|g' composer.json
+    sed -i -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
   fi
   _say "Patched composer.json: php artisan serve → .lake/frankenphp run"
 fi
