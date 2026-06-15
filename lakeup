@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LAKE_SETUP_VERSION="0.6.0"
+LAKE_SETUP_VERSION="0.7.0"
 
 _lake_logo() {
   local sky=$'\e[38;5;117m' db=$'\e[38;5;27m' ls=$'\e[38;5;153m' r=$'\e[0m'
@@ -87,6 +87,46 @@ _seed_boost_php_path() {
 
   _say "Boost detected: set BOOST_PHP_EXECUTABLE_PATH → .lake/php in .env (wires all MCP agents)."
 }
+_install_lake_skill() {
+  # Install the "lake" agent skill so AI coding agents use the .lake/ shims
+  # instead of bare php/composer (which fail — there is no host runtime).
+  # One SKILL.md (identical format/content) covers all three target agents:
+  #   .claude/skills/lake/  → Claude Code + OpenCode
+  #   .agents/skills/lake/  → Codex + OpenCode
+  # Lake-owned dirs, so always overwrite. Non-interactive, idempotent.
+  # NOTE: keep in sync with tests/helpers/install_lake_skill
+  local _dir
+  for _dir in .claude/skills/lake .agents/skills/lake; do
+    mkdir -p "$_dir"
+    cat > "$_dir/SKILL.md" <<'SKILLEOF'
+---
+name: lake
+description: How to run commands in a Lake-provisioned Laravel project. Use
+  whenever running PHP, Artisan, Composer, tests, or the dev server in a repo
+  that contains a .lake/ directory.
+---
+
+# Working in a Lake project
+
+This project is bootstrapped by **Lake** — there is NO host PHP, Composer, or
+Docker. All tooling lives in `.lake/` shims. NEVER call bare `php`, `composer`,
+`artisan`, or `php artisan` — they will fail.
+
+## Commands — always use the shims
+- PHP:        `.lake/php <args>`        (NOT `php`)
+- Artisan:    `.lake/php artisan <cmd>` (NOT `php artisan`)
+- Composer:   `.lake/composer <cmd>`    (NOT `composer`)
+- Dev server: `.lake/composer run dev`  (FrankenPHP + queue + logs + Vite)
+- Tests:      `.lake/composer run test`
+
+## Notes
+- SQLite is the default DB (`database/database.sqlite`).
+- Re-bootstrap/reset is `./lakeup` (and `./lakeup purge` / `clean`).
+- Don't suggest installing PHP/Composer on the host — Lake is self-contained.
+SKILLEOF
+  done
+  _say "Installed the 'lake' AI skill → .claude/skills/lake, .agents/skills/lake."
+}
 _version_gt() {
   # Returns 0 (true) if $1 > $2  (semver X.Y.Z)
   local IFS='.'
@@ -122,6 +162,7 @@ Commands:
   purge         Remove everything in this directory except lakeup, .claude, .git, .gitignore, CLAUDE.md, and README.md
   clean         Remove Laravel app files only; keep .lake/ (FrankenPHP, Composer, installer)
   update        Check for a newer version of lakeup and update in-place
+  skill         Install the Lake AI skill for Claude Code, Codex, and OpenCode
   version       Show lakeup and Laravel versions
   help          Show this help message
 
@@ -241,6 +282,15 @@ if [[ "${1:-}" == "update" ]]; then
   else
     _say "Update cancelled."
   fi
+  exit 0
+fi
+
+# ----------------------------
+# skill COMMAND
+# ----------------------------
+
+if [[ "${1:-}" == "skill" ]]; then
+  _install_lake_skill
   exit 0
 fi
 
@@ -871,6 +921,16 @@ fi
 if [[ -d "vendor/laravel/boost" ]]; then
   _seed_boost_php_path
   _say "Next: run '.lake/php artisan boost:install' to configure your AI agent."
+fi
+
+# The Lake skill teaches AI coding agents to use the .lake/ shims (not bare
+# php/composer). Offer it only when absent — re-install any time with `./lakeup skill`.
+if [[ ! -f ".claude/skills/lake/SKILL.md" ]]; then
+  echo ""
+  _say "The Lake AI skill teaches coding agents to use the .lake/ shims (Claude Code, Codex, OpenCode)."
+  if _confirm_no "Install the Lake AI skill now?"; then
+    _install_lake_skill
+  fi
 fi
 
 # ----------------------------

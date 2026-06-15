@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Standalone wrapper for the _install_lake_skill function extracted from lakeup.
+# Keep this in sync with the implementation in lakeup.
+# Writes the "lake" SKILL.md into the current working directory's agent dirs.
+# Usage: cd <project>; bash tests/helpers/install_lake_skill
+
+_say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+
+_install_lake_skill() {
+  local _dir
+  for _dir in .claude/skills/lake .agents/skills/lake; do
+    mkdir -p "$_dir"
+    cat > "$_dir/SKILL.md" <<'SKILLEOF'
+---
+name: lake
+description: How to run commands in a Lake-provisioned Laravel project. Use
+  whenever running PHP, Artisan, Composer, tests, or the dev server in a repo
+  that contains a .lake/ directory.
+---
+
+# Working in a Lake project
+
+This project is bootstrapped by **Lake** — there is NO host PHP, Composer, or
+Docker. All tooling lives in `.lake/` shims. NEVER call bare `php`, `composer`,
+`artisan`, or `php artisan` — they will fail.
+
+## Commands — always use the shims
+- PHP:        `.lake/php <args>`        (NOT `php`)
+- Artisan:    `.lake/php artisan <cmd>` (NOT `php artisan`)
+- Composer:   `.lake/composer <cmd>`    (NOT `composer`)
+- Dev server: `.lake/composer run dev`  (FrankenPHP + queue + logs + Vite)
+- Tests:      `.lake/composer run test`
+
+## Notes
+- SQLite is the default DB (`database/database.sqlite`).
+- Re-bootstrap/reset is `./lakeup` (and `./lakeup purge` / `clean`).
+- Don't suggest installing PHP/Composer on the host — Lake is self-contained.
+SKILLEOF
+  done
+  _say "Installed the 'lake' AI skill → .claude/skills/lake, .agents/skills/lake."
+}
+
+_install_lake_skill "$@"

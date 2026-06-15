@@ -55,6 +55,9 @@ FRANKEN_VERSION=1.11.2 LAKE_PORT=9000 ./lakeup   # with overrides
 # Tests
 .lake/composer run test
 
+# Install the Lake AI skill (Claude Code, Codex, OpenCode)
+./lakeup skill
+
 # Reset
 ./lakeup purge    # Remove everything except lakeup and .claude
 ./lakeup clean    # Remove Laravel files only; keep .lake/ (~170 MB of binaries)
@@ -95,5 +98,7 @@ Conditional patches that run after `laravel new` are written **inline in `lakeup
 Current inline patches:
 - **`.mcp.json` command path** — if `.mcp.json` contains `"command": "php"` (written by packages like `laravel/boost`), the user is prompted to rewrite it to `.lake/php`. Uses `read -rp ... </dev/tty` for reliable interactive input and `frankenphp php-cli -r` for the regex replacement.
 - **Laravel Boost MCP php binary (`.env` seed)** — Lake offers (default **no**, via `_confirm_no`) to `composer require laravel/boost --dev`. Whenever `vendor/laravel/boost` is present, `_seed_boost_php_path` upserts `BOOST_PHP_EXECUTABLE_PATH="$(pwd)/.lake/php"` into `.env`. Boost resolves *every* agent's MCP `command` from `config('boost.executable_paths.php')` ← `env('BOOST_PHP_EXECUTABLE_PATH')`, so this one line wires all agents (Claude Code, Cursor, Codex, Copilot, Junie, Kiro, Zed, …) to the shim — for the user's own `boost:install`/`boost:update`. An **absolute** path is used because Junie and Amp force absolute MCP command paths. Pure-bash and idempotent (replaces a stale line, appends if missing). Lake does **not** run `boost:install` itself — its agent picker is interactive-only (`laravel/prompts` `multiselect()`), which silently fails under FrankenPHP's broken TTY. The helper is mirrored in `tests/helpers/seed_boost_php_path` (kept in sync) and covered by `tests/unit/boost_env.bats`.
+
+- **Lake AI skill (`_install_lake_skill`)** — writes one embedded `SKILL.md` (frontmatter `name: lake`) that tells AI coding agents to use the `.lake/` shims instead of bare `php`/`composer` (which fail — no host runtime). The same file is installed to two **Lake-owned** dirs: `.claude/skills/lake/` (Claude Code + OpenCode) and `.agents/skills/lake/` (Codex + OpenCode) — these two locations cover all three target agents because OpenCode reads both. Runnable any time via **`./lakeup skill`**; also offered once during bootstrap via `_confirm_no` (default **no**, `curl | bash`-safe) **only when `.claude/skills/lake/SKILL.md` is absent**. Always overwrites (Lake-owned, keeps guidance fresh across upgrades); non-interactive; pure bash. The helper is mirrored in `tests/helpers/install_lake_skill` (kept in sync) and covered by `tests/unit/lake_skill.bats`. *Unverified:* whether OpenCode dedupes vs. warns when the same `name: lake` skill appears in both `.claude/skills/` and `.agents/skills/`.
 
 **Why not `laravel/prompts` or external scripts?** FrankenPHP php-cli does not pass the TTY through correctly, so `laravel/prompts`' `confirm()` silently falls back to its default without showing a prompt. Direct `/dev/tty` reads in bash are reliable.
