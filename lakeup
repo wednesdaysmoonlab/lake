@@ -87,6 +87,53 @@ _seed_boost_php_path() {
 
   _say "Boost detected: set BOOST_PHP_EXECUTABLE_PATH → .lake/php in .env (wires all MCP agents)."
 }
+_patch_agent_mcp_php() {
+  # MCP installers (laravel/boost's `boost:install`, etc.) write each AI agent's
+  # config with `command: php`. A Lake project has no system PHP, so rewrite
+  # every known agent config to the absolute .lake/php shim — the exact value
+  # Boost itself writes once BOOST_PHP_EXECUTABLE_PATH is set. Running it here
+  # repairs configs left over from a `boost:install` that ran BEFORE the .env
+  # seed (only .mcp.json was patched historically, so Codex/OpenCode/Zed/Amp/...
+  # were left pointing at a non-existent `php`). Idempotent and safe on every
+  # bootstrap: only a bare `php` command is rewritten. Covers JSON (both the
+  # "command": "php" string form and OpenCode's "command": [ "php", ... ] array
+  # form) and Codex's TOML (command = "php").
+  # NOTE: keep in sync with tests/helpers/patch_agent_mcp
+  local target abs_esc f changed=() _OS
+  _OS="$(uname -s)"
+  target="$(pwd)/.lake/php"
+  # Escape sed replacement metacharacters (#, &, \) in the path.
+  abs_esc="$(printf '%s' "$target" | sed 's/[#&\]/\\&/g')"
+
+  # Every agent MCP config file Boost can write (see laravel/boost Install/Agents).
+  local files=( .mcp.json opencode.json .codex/config.toml .amp/settings.json \
+    .zed/settings.json .factory/mcp.json .cursor/mcp.json .vscode/mcp.json \
+    .junie/mcp/mcp.json .kiro/settings/mcp.json )
+
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    # Skip files that don't reference a bare `php` command (idempotent no-op).
+    grep -qE '"command"[[:space:]]*:[[:space:]]*"php"|command[[:space:]]*=[[:space:]]*"php"|^[[:space:]]*"php"[[:space:]]*,?[[:space:]]*$' "$f" 2>/dev/null || continue
+    if [[ "$_OS" == "Darwin" ]]; then
+      sed -i '' -E \
+        -e "s#(\"command\"[[:space:]]*:[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#(command[[:space:]]*=[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#^([[:space:]]*)\"php\"([[:space:]]*,?)[[:space:]]*\$#\1\"$abs_esc\"\2#g" \
+        "$f"
+    else
+      sed -i -E \
+        -e "s#(\"command\"[[:space:]]*:[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#(command[[:space:]]*=[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#^([[:space:]]*)\"php\"([[:space:]]*,?)[[:space:]]*\$#\1\"$abs_esc\"\2#g" \
+        "$f"
+    fi
+    changed+=("$f")
+  done
+
+  if (( ${#changed[@]} )); then
+    _say "Patched AI agent MCP config(s) → .lake/php: ${changed[*]}"
+  fi
+}
 _install_lake_skill() {
   # Install the "lake" agent skill so AI coding agents use the .lake/ shims
   # instead of bare php/composer (which fail — there is no host runtime).
@@ -892,29 +939,15 @@ if [[ -f ".gitignore" ]] && ! grep -qxF ".lake" .gitignore; then
 fi
 
 # ----------------------------
-# PATCH .mcp.json FOR LAKE
+# PATCH AGENT MCP CONFIGS FOR LAKE
 # ----------------------------
 
-# Packages like laravel/boost write .mcp.json with "command": "php".
-# In a Lake environment there is no system PHP — rewrite to ".lake/php".
-if [[ -f ".mcp.json" ]] && grep -qE '"command"\s*:\s*"php"' .mcp.json 2>/dev/null; then
-  echo ""
-  _say "Detected .mcp.json with \"command\": \"php\"."
-  _say "Lake needs to change this to \".lake/php\" (no system PHP available)."
-  if _confirm "Patch .mcp.json?"; then
-    "$FRANKEN_BIN" php-cli -r "
-      \$path = '.mcp.json';
-      \$content = file_get_contents(\$path);
-      \$patched = preg_replace('/\"command\"(\s*:\s*)\"php\"/', '\"command\"\$1\".lake/php\"', \$content);
-      if (\$patched !== null && \$patched !== \$content) {
-        file_put_contents(\$path, \$patched);
-      }
-    "
-    _say "Patched .mcp.json: php → .lake/php"
-  else
-    _say "Skipped .mcp.json patching."
-  fi
-fi
+# Packages like laravel/boost write each AI agent's MCP config with
+# "command": "php". A Lake project has no system PHP, so rewrite every known
+# agent config (.mcp.json, Codex, OpenCode, Zed, Amp, Cursor, Copilot, ...) to
+# the .lake/php shim. Idempotent: only configs still pointing at a bare `php`
+# change, so this is safe to run on every bootstrap.
+_patch_agent_mcp_php
 
 # ----------------------------
 # LARAVEL BOOST (optional)
