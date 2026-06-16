@@ -16,7 +16,7 @@ The whole lifecycle is wrapped by the **`./release` CLI** — prefer it over run
 ./release start <name>   # branch feature/<name> off main
 ./release bump <level>   # patch|minor|major|X.Y.Z — edits LAKE_SETUP_VERSION, commits on the feature branch
 ./release pr             # push branch + open PR into main
-./release tag            # tag main with its current version (after the PR merges)
+./release tag            # tag main with its current version (after the PR merges); prunes merged feature branches
 ./release status         # current branch, local version, latest GitHub release
 ```
 
