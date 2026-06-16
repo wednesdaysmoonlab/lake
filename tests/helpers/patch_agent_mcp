@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Standalone wrapper for the _patch_agent_mcp_php function extracted from lakeup.
+# Keep this in sync with the implementation in lakeup.
+# Rewrites every AI agent's MCP `command: php` → the absolute .lake/php shim in
+# the current working directory (a Lake project has no system PHP). Covers JSON
+# string + array command forms and Codex's TOML. Idempotent.
+# Usage: cd <project>; bash tests/helpers/patch_agent_mcp
+
+_say() { printf '\e[38;5;117m✦\e[0m %s\n' "$*"; }
+
+_patch_agent_mcp_php() {
+  local target abs_esc f changed=() _OS
+  _OS="$(uname -s)"
+  target="$(pwd)/.lake/php"
+  abs_esc="$(printf '%s' "$target" | sed 's/[#&\]/\\&/g')"
+
+  local files=( .mcp.json opencode.json .codex/config.toml .amp/settings.json \
+    .zed/settings.json .factory/mcp.json .cursor/mcp.json .vscode/mcp.json \
+    .junie/mcp/mcp.json .kiro/settings/mcp.json )
+
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] || continue
+    grep -qE '"command"[[:space:]]*:[[:space:]]*"php"|command[[:space:]]*=[[:space:]]*"php"|^[[:space:]]*"php"[[:space:]]*,?[[:space:]]*$' "$f" 2>/dev/null || continue
+    if [[ "$_OS" == "Darwin" ]]; then
+      sed -i '' -E \
+        -e "s#(\"command\"[[:space:]]*:[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#(command[[:space:]]*=[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#^([[:space:]]*)\"php\"([[:space:]]*,?)[[:space:]]*\$#\1\"$abs_esc\"\2#g" \
+        "$f"
+    else
+      sed -i -E \
+        -e "s#(\"command\"[[:space:]]*:[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#(command[[:space:]]*=[[:space:]]*)\"php\"#\1\"$abs_esc\"#g" \
+        -e "s#^([[:space:]]*)\"php\"([[:space:]]*,?)[[:space:]]*\$#\1\"$abs_esc\"\2#g" \
+        "$f"
+    fi
+    changed+=("$f")
+  done
+
+  if (( ${#changed[@]} )); then
+    _say "Patched AI agent MCP config(s) → .lake/php: ${changed[*]}"
+  fi
+}
+
+_patch_agent_mcp_php "$@"

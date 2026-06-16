@@ -4,7 +4,7 @@
 #   ./release start <name>     Branch feature/<name> off main
 #   ./release bump <level>     Bump LAKE_SETUP_VERSION (patch|minor|major|X.Y.Z), commit
 #   ./release pr               Push current branch + open PR into main
-#   ./release tag              Tag main with its current version (after the PR merges)
+#   ./release tag              Tag main with its current version (after the PR merges); prunes merged feature branches
 #   ./release status           Show current branch, local version, latest GitHub release
 #
 # Every destructive step prints what it will do and asks before running.
@@ -133,6 +133,35 @@ cmd_bump() {
   _say "Bumped to ${new} and committed. When ready: ./release pr"
 }
 
+# Delete local feature/* branches whose changes already landed on main, plus the
+# matching origin ref. Handles squash-merges (the default here): `git branch -d`
+# can't see a squashed branch as merged, so we ask `git cherry` — if every commit
+# is prefixed '-', its diff is already in main and the branch is safe to force-delete.
+_cleanup_merged_branches() {
+  local current branch line unmerged
+  current=$(git rev-parse --abbrev-ref HEAD)
+  git fetch --prune origin &>/dev/null || true
+
+  while IFS= read -r branch; do
+    [[ -n "$branch" ]] || continue
+    [[ "$branch" == "$current" ]] && continue   # never delete the branch we're on
+
+    # git cherry prints one line per commit: '-' = already in main, '+' = not yet.
+    unmerged=0
+    while IFS= read -r line; do
+      [[ "$line" == +* ]] && { unmerged=1; break; }
+    done < <(git cherry main "$branch" 2>/dev/null)
+    [[ "$unmerged" -eq 1 ]] && continue          # still has unmerged work — leave it
+
+    _say "Cleaning up merged branch: ${branch}"
+    git branch -D "$branch" &>/dev/null || true
+    if git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+      git push origin --delete "$branch" &>/dev/null \
+        && _say "  deleted origin/${branch}" || true
+    fi
+  done < <(git for-each-ref --format='%(refname:short)' refs/heads/feature)
+}
+
 _assert_tag_free() {
   local tag="$1"
   if git rev-parse "$tag" &>/dev/null; then
@@ -169,6 +198,7 @@ cmd_tag() {
   _say "Tagging main : ${tag}"
   _say "Latest GitHub release : $(_fmt_release "$(_latest_release)")"
   _tag_and_push "$tag"
+  _cleanup_merged_branches
 }
 
 # ── status ───────────────────────────────────────────────────────────────────
@@ -189,7 +219,7 @@ release — guided release lifecycle for Lake
   ./release start <name>     Branch feature/<name> off main
   ./release bump <level>     Bump version (patch|minor|major|X.Y.Z), commit on the feature branch
   ./release pr               Push current branch + open a PR into main
-  ./release tag              Tag main with its current version (after the PR merges)
+  ./release tag              Tag main with its current version (after the PR merges); prunes merged feature branches
   ./release status           Show branch, local version, latest GitHub release
 
 Typical flow:
