@@ -14,9 +14,9 @@ _patch_dev_script() {
 
   if grep -q "php artisan serve" composer.json 2>/dev/null; then
     if [[ "$_OS" == "Darwin" ]]; then
-      sed -i '' -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
+      sed -i '' -E 's#php artisan serve( +--[a-z]+=[^" \\]*)*#.lake/frankenphp run#g' composer.json
     else
-      sed -i -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
+      sed -i -E 's#php artisan serve( +--[a-z]+=[^" \\]*)*#.lake/frankenphp run#g' composer.json
     fi
     _say "Patched composer.json: php artisan serve → .lake/frankenphp run"
   fi
