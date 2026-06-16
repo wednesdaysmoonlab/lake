@@ -748,12 +748,16 @@ fi
 # Replace it with `frankenphp run` (reads Caddyfile) in the dev script.
 # Recent Laravel skeletons append flags (e.g. `--host=localhost`) to the serve
 # command; `frankenphp run` rejects those, so strip any trailing `--flag=value`.
+# The value class excludes backslash (`[^" \\]`) as well as quote/space: in
+# composer.json the command is wrapped in escaped quotes (`...localhost\"`), and
+# matching the `\` would eat the escape, unbalance the quotes, and corrupt the
+# JSON — which the post-autoload-dump step below would then clobber entirely.
 
 if grep -q "php artisan serve" composer.json 2>/dev/null; then
   if [[ "$_OS" == "Darwin" ]]; then
-    sed -i '' -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
+    sed -i '' -E 's#php artisan serve( +--[a-z]+=[^" \\]*)*#.lake/frankenphp run#g' composer.json
   else
-    sed -i -E 's#php artisan serve( +--[a-z]+=[^" ]*)*#.lake/frankenphp run#g' composer.json
+    sed -i -E 's#php artisan serve( +--[a-z]+=[^" \\]*)*#.lake/frankenphp run#g' composer.json
   fi
   _say "Patched composer.json: php artisan serve → .lake/frankenphp run"
 fi
@@ -762,8 +766,15 @@ fi
 # every `composer install/update/require` automatically patches PHP_BINARY
 # references in vendor files for FrankenPHP compatibility.
 if [[ -f "composer.json" ]] && ! grep -q "fix-php-binary" composer.json 2>/dev/null; then
-  "$FRANKEN_BIN" php-cli -r "
-    \$json = json_decode(file_get_contents('composer.json'), true);
+  if "$FRANKEN_BIN" php-cli -r "
+    \$raw = file_get_contents('composer.json');
+    \$json = json_decode(\$raw, true);
+    // Guard: never overwrite composer.json from a failed decode — a null/non-array
+    // \$json would auto-vivify and clobber the whole manifest down to just scripts.
+    if (!is_array(\$json)) {
+        fwrite(STDERR, 'composer.json is not valid JSON: ' . json_last_error_msg() . \"\n\");
+        exit(1);
+    }
     \$hook = '@php .lake/fix-php-binary';
     \$pad = \$json['scripts']['post-autoload-dump'] ?? [];
     if (!in_array(\$hook, \$pad, true)) {
@@ -771,8 +782,11 @@ if [[ -f "composer.json" ]] && ! grep -q "fix-php-binary" composer.json 2>/dev/n
         \$json['scripts']['post-autoload-dump'] = \$pad;
         file_put_contents('composer.json', json_encode(\$json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . \"\n\");
     }
-  "
-  _say "Patched composer.json: added post-autoload-dump hook for PHP_BINARY fix"
+  "; then
+    _say "Patched composer.json: added post-autoload-dump hook for PHP_BINARY fix"
+  else
+    _say "⚠ Skipped post-autoload-dump hook: composer.json could not be parsed (left untouched)."
+  fi
 fi
 
 # ----------------------------
